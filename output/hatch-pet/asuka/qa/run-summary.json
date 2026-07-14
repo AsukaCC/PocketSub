@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "spriteVersionNumber": 2,
+  "run_dir": "D:\\Code\\PocketSub\\output\\hatch-pet\\asuka",
+  "spritesheet": "D:\\Code\\PocketSub\\output\\hatch-pet\\asuka\\final\\spritesheet-extended.webp",
+  "validation": "D:\\Code\\PocketSub\\output\\hatch-pet\\asuka\\final\\validation-extended.json",
+  "chroma_despill": "D:\\Code\\PocketSub\\output\\hatch-pet\\asuka\\qa\\chroma-despill-extended.json",
+  "contact_sheet": "D:\\Code\\PocketSub\\output\\hatch-pet\\asuka\\qa\\contact-sheet-extended.png",
+  "direction_sheet": "D:\\Code\\PocketSub\\output\\hatch-pet\\asuka\\qa\\look-directions.png",
+  "direction_semantics": "D:\\Code\\PocketSub\\output\\hatch-pet\\asuka\\qa\\direction-semantics.json",
+  "blind_direction_validation": "D:\\Code\\PocketSub\\output\\hatch-pet\\asuka\\qa\\direction-blind-validation.json",
+  "blind_review_resolution": null,
+  "continuity": "D:\\Code\\PocketSub\\output\\hatch-pet\\asuka\\qa\\look-continuity.json",
+  "review": "D:\\Code\\PocketSub\\output\\hatch-pet\\asuka\\qa\\review.json",
+  "final_visual_qa": "D:\\Code\\PocketSub\\output\\hatch-pet\\asuka\\qa\\final-visual-qa.json",
+  "package": "C:\\Users\\asuka\\.codex\\pets\\asuka",
+  "installed_sha256": "F0F747624439A963B5D7C099935AD95C3E5D825DB85A0BE8B64D8D01873465C8"
+}

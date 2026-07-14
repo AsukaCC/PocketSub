@@ -1,0 +1,10 @@
+{
+  "visual_qa": "pass",
+  "qa_note": "All 11 rows preserve Asuka's sticker identity, palette, face, proportions, outfit, and hair with correct unclipped motion semantics; deterministic gates pass and only accepted intermediate-direction subtleties remain.",
+  "review_warnings": [
+    "Rows 0-8 stable-slots warnings accepted after stable unclipped frame and preview review.",
+    "Intermediate direction cues at 022.5, 112.5, 157.5, 202.5, 247.5, 292.5, 315, and 337.5 are subtle but coherent in the labeled loop.",
+    "The 180 to 202.5 center metric and 337.5 to 000 wrap metrics have no conspicuous visual snap."
+  ],
+  "repair_rows": []
+}

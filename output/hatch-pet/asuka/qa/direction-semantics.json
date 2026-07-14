@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "reviewed_by": "independent-final-visual-qa-worker",
+  "directions": [
+    {"direction":"000","verdict":"pass","expected":"up","observed":"up","horizontal_evidence":"Nose and pupils are centered.","vertical_evidence":"Pupils are raised and the chin is lifted.","reason":"Unmistakable up cardinal."},
+    {"direction":"022.5","verdict":"warning","expected":"up-right","observed":"up-right","horizontal_evidence":"Nose and pupils are subtly screen-right.","vertical_evidence":"Pupils are high and the chin is raised.","reason":"Blind horizontal ambiguity resolves correctly in the labeled loop."},
+    {"direction":"045","verdict":"pass","expected":"up-right","observed":"up-right","horizontal_evidence":"Nose and pupils are screen-right.","vertical_evidence":"Eyes and face are visibly raised.","reason":"Both axes clearly occupy the intended quadrant."},
+    {"direction":"067.5","verdict":"pass","expected":"up-right","observed":"up-right","horizontal_evidence":"The head turn and nose offset are strongly screen-right.","vertical_evidence":"Pupils remain raised.","reason":"Coherent progression toward right."},
+    {"direction":"090","verdict":"pass","expected":"right","observed":"right","horizontal_evidence":"Profile nose and eye aim are unmistakably screen-right.","vertical_evidence":"Head and gaze remain near level.","reason":"Clear right cardinal."},
+    {"direction":"112.5","verdict":"warning","expected":"down-right","observed":"down-right","horizontal_evidence":"Profile nose and pupil remain screen-right.","vertical_evidence":"Chin and eye line begin lowering.","reason":"Blind vertical ambiguity is minor in the ordered loop."},
+    {"direction":"135","verdict":"pass","expected":"down-right","observed":"down-right","horizontal_evidence":"Nose and visible eye remain screen-right.","vertical_evidence":"Bowed head and lowered pupil clearly indicate down.","reason":"Both axes are readable."},
+    {"direction":"157.5","verdict":"warning","expected":"down-right","observed":"down-right","horizontal_evidence":"A slight rightward face and pupil offset remains.","vertical_evidence":"Deep head bow and low eyes dominate.","reason":"Blind horizontal ambiguity is acceptable near the down cardinal."},
+    {"direction":"180","verdict":"pass","expected":"down","observed":"down","horizontal_evidence":"Face and pupils are centered.","vertical_evidence":"Head is bowed with pupils aimed low.","reason":"Unmistakable down cardinal."},
+    {"direction":"202.5","verdict":"warning","expected":"down-left","observed":"down-left","horizontal_evidence":"Face and nose begin shifting screen-left.","vertical_evidence":"Head and pupils remain lowered.","reason":"Blind horizontal ambiguity and the 9px metric shift show no visible reversal or snap."},
+    {"direction":"225","verdict":"pass","expected":"down-left","observed":"down-left","horizontal_evidence":"Profile nose and eye aim are screen-left.","vertical_evidence":"Lowered chin and eye line retain down.","reason":"Both axes clearly occupy the intended quadrant."},
+    {"direction":"247.5","verdict":"warning","expected":"down-left","observed":"down-left","horizontal_evidence":"Strong screen-left profile and nose offset.","vertical_evidence":"Chin and gaze are slightly lowered.","reason":"Blind vertical ambiguity is minor before the left cardinal."},
+    {"direction":"270","verdict":"pass","expected":"left","observed":"left","horizontal_evidence":"Profile nose and pupil are unmistakably screen-left.","vertical_evidence":"Head and eye line remain level.","reason":"Clear left cardinal."},
+    {"direction":"292.5","verdict":"warning","expected":"up-left","observed":"up-left","horizontal_evidence":"Nose and visible eye remain screen-left.","vertical_evidence":"Chin and gaze begin lifting.","reason":"Blind vertical ambiguity resolves in the labeled progression."},
+    {"direction":"315","verdict":"warning","expected":"up-left","observed":"up-left","horizontal_evidence":"Three-quarter face and pupils point screen-left.","vertical_evidence":"Raised eye line and head angle indicate up.","reason":"Blind vertical ambiguity is minor in the coherent loop."},
+    {"direction":"337.5","verdict":"warning","expected":"up-left","observed":"up-left","horizontal_evidence":"Nose and pupil retain a subtle screen-left offset.","vertical_evidence":"Pupils and chin lift toward up.","reason":"Blind ambiguity and wrap metrics are accepted because the labeled loop has no wrong quadrant or visible reversal."}
+  ]
+}
