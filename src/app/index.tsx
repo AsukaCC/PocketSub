@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, Modal, Pressable, SafeAreaView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 import { PaperBackground } from '@/components/ui/PaperBackground';
 import { WobblyBox } from '@/components/ui/WobblyBox';
 import { ChalkButton } from '@/components/ui/ChalkButton';
@@ -9,7 +10,7 @@ import { useSubscriptions } from '@/context/SubscriptionContext';
 import { useCustomTheme } from '@/context/ThemeContext';
 import { BottomTabInset, Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { getNextBillingDate, getDaysRemaining } from '@/utils/date';
-import { Plus, AlertCircle, X, Check, WalletCards, Pencil, Trash2, ChevronDown, ChevronRight, Search } from 'lucide-react-native';
+import { Plus, AlertCircle, X, Check, WalletCards, Pencil, Trash2, ChevronDown, ChevronRight, Search, ArrowUp, ArrowDown } from 'lucide-react-native';
 import dayjs from 'dayjs';
 import { useI18n } from '@/context/I18nContext';
 import { supportedCurrencies, useCurrency, type CurrencyCode } from '@/context/CurrencyContext';
@@ -21,6 +22,60 @@ const COLORS: ('primary' | 'secondary' | 'accentGreen' | 'accentYellow')[] = ['p
 const STATUS_OPTIONS: SubscriptionStatus[] = ['active', 'paused', 'expired'];
 type SortKey = 'createdAt' | 'expiresAt' | 'price';
 type SortDirection = 'asc' | 'desc';
+type IconButtonIcon = React.ComponentType<{ size?: number; color?: string }>;
+
+interface IconActionButtonProps {
+  onPress?: () => void;
+  icon: IconButtonIcon;
+  accessibilityLabel: string;
+  variant?: 'primary' | 'outline' | 'secondary';
+  active?: boolean;
+  disabled?: boolean;
+  expanded?: boolean;
+}
+
+function IconActionButton({
+  onPress,
+  icon: Icon,
+  accessibilityLabel,
+  variant = 'outline',
+  active = false,
+  disabled = false,
+  expanded,
+}: IconActionButtonProps) {
+  const { colors, isDark } = useCustomTheme();
+  const isPrimary = variant === 'primary';
+  const iconColor = isPrimary
+    ? (isDark ? '#101828' : '#ffffff')
+    : active
+      ? colors.primary
+      : colors.text;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ disabled, expanded }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.iconActionButton,
+        {
+          borderColor: active ? colors.primary : colors.border,
+          backgroundColor: isPrimary
+            ? colors.primary
+            : active || variant === 'secondary'
+              ? colors.backgroundSelected
+              : colors.backgroundElement,
+          opacity: disabled ? 0.48 : pressed ? 0.78 : 1,
+        },
+      ]}
+    >
+      <Icon size={18} color={iconColor} />
+      {active && !isPrimary && <View style={[styles.iconActionDot, { backgroundColor: colors.primary }]} />}
+    </Pressable>
+  );
+}
 
 function getTimestamp(value: string | undefined, fallback = 0): number {
   if (!value) {
@@ -380,16 +435,17 @@ export default function Dashboard() {
                 : t('dashboard.mySubscriptions')}
             </Text>
             <View style={styles.listActions}>
-              <ChalkButton
+              <IconActionButton
                 onPress={handleToggleSelectionMode}
-                title={selectionMode ? t('common.done') : t('dashboard.manage')}
-                icon={Pencil}
+                accessibilityLabel={selectionMode ? t('common.done') : t('dashboard.manage')}
+                icon={selectionMode ? Check : Pencil}
                 variant="outline"
+                active={selectionMode}
               />
               {!selectionMode && (
-                <ChalkButton
+                <IconActionButton
                   onPress={() => setModalVisible(true)}
-                  title={t('dashboard.add')}
+                  accessibilityLabel={t('dashboard.add')}
                   icon={Plus}
                   variant="primary"
                 />
@@ -400,6 +456,7 @@ export default function Dashboard() {
           <View style={styles.filterArea}>
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel={t('dashboard.search')}
               accessibilityState={{ expanded: filterExpanded }}
               onPress={() => setFilterExpanded(prev => !prev)}
               style={[
@@ -410,99 +467,103 @@ export default function Dashboard() {
                 },
               ]}
             >
-              <Search size={16} color={filterActive ? colors.primary : colors.text} />
-              <Text style={[styles.filterToggleText, { color: filterActive ? colors.primary : colors.text }]}>
-                {t('dashboard.search')}
-              </Text>
+              <Search size={18} color={filterActive ? colors.primary : colors.text} />
               {filterActive && <View style={[styles.filterActiveDot, { backgroundColor: colors.primary }]} />}
-              {filterExpanded
-                ? <ChevronDown size={16} color={colors.textSecondary} />
-                : <ChevronRight size={16} color={colors.textSecondary} />}
             </Pressable>
 
             {filterExpanded && (
+              <Animated.View
+                entering={FadeInDown.duration(180)}
+                exiting={FadeOutUp.duration(140)}
+                style={styles.filterPanelMotion}
+              >
+                <WobblyBox
+                  backgroundColor={colors.backgroundElement}
+                  borderColor={colors.border}
+                  borderWidth={1}
+                  shadowOffset={0}
+                  style={styles.filterPanel}
+                  contentStyle={styles.filterContent}
+                >
+                  <ChalkInput
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholder={t('dashboard.searchPlaceholder')}
+                    style={styles.searchInput}
+                    inputStyle={styles.searchInputText}
+                  />
+                  <View style={styles.sortCompactRow}>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setSortModalVisible(true)}
+                      style={[styles.sortSelectButton, { borderColor: colors.border }]}
+                    >
+                      <View style={styles.sortSelectTextGroup}>
+                        <Text style={[styles.filterLabel, { color: colors.textSecondary }]}>
+                          {t('dashboard.sortBy')}
+                        </Text>
+                        <Text style={[styles.sortSelectValue, { color: colors.text }]}>
+                          {t(`dashboard.sort.${sortKey}` as TranslationKey)}
+                        </Text>
+                      </View>
+                      <ChevronDown size={16} color={colors.textSecondary} />
+                    </Pressable>
+
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t(sortDirection === 'asc' ? 'dashboard.sortAsc' : 'dashboard.sortDesc')}
+                      onPress={() => setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))}
+                      style={[styles.sortDirectionButton, { borderColor: colors.border }]}
+                    >
+                      {sortDirection === 'asc'
+                        ? <ArrowUp size={18} color={colors.text} />
+                        : <ArrowDown size={18} color={colors.text} />}
+                    </Pressable>
+                  </View>
+                </WobblyBox>
+              </Animated.View>
+            )}
+          </View>
+
+          {selectionMode && (
+            <Animated.View
+              entering={FadeInDown.duration(180)}
+              exiting={FadeOutUp.duration(140)}
+            >
               <WobblyBox
                 backgroundColor={colors.backgroundElement}
                 borderColor={colors.border}
                 borderWidth={1}
                 shadowOffset={0}
-                style={styles.filterPanel}
-                contentStyle={styles.filterContent}
+                style={styles.bulkToolbar}
+                contentStyle={styles.bulkToolbarContent}
               >
-                <ChalkInput
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  placeholder={t('dashboard.searchPlaceholder')}
-                  style={styles.searchInput}
-                  inputStyle={styles.searchInputText}
-                />
-                <View style={styles.sortCompactRow}>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => setSortModalVisible(true)}
-                    style={[styles.sortSelectButton, { borderColor: colors.border }]}
-                  >
-                    <View style={styles.sortSelectTextGroup}>
-                      <Text style={[styles.filterLabel, { color: colors.textSecondary }]}>
-                        {t('dashboard.sortBy')}
-                      </Text>
-                      <Text style={[styles.sortSelectValue, { color: colors.text }]}>
-                        {t(`dashboard.sort.${sortKey}` as TranslationKey)}
-                      </Text>
-                    </View>
-                    <ChevronDown size={16} color={colors.textSecondary} />
-                  </Pressable>
-
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={t(sortDirection === 'asc' ? 'dashboard.sortAsc' : 'dashboard.sortDesc')}
-                    onPress={() => setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))}
-                    style={[styles.sortDirectionButton, { borderColor: colors.border }]}
-                  >
-                    <Text style={[styles.sortDirectionText, { color: colors.text }]}>
-                      {t(sortDirection === 'asc' ? 'dashboard.sortAsc' : 'dashboard.sortDesc')}
-                    </Text>
-                    <ChevronDown size={16} color={colors.textSecondary} />
-                  </Pressable>
+                <View style={styles.bulkActionRow}>
+                  <ChalkButton
+                    onPress={selectedCount === visibleSubscriptions.length ? () => setSelectedIds([]) : handleSelectAll}
+                    title={selectedCount === visibleSubscriptions.length
+                      ? t('dashboard.clearSelection')
+                      : t('dashboard.selectAll')}
+                    variant="secondary"
+                    disabled={visibleSubscriptions.length === 0}
+                  />
+                  <ChalkButton
+                    onPress={openBulkModal}
+                    title={t('dashboard.bulkEdit')}
+                    icon={Pencil}
+                    variant="primary"
+                    disabled={selectedCount === 0}
+                  />
+                  <ChalkButton
+                    onPress={handleDeleteSelected}
+                    title={t('dashboard.deleteSelected')}
+                    icon={Trash2}
+                    variant="outline"
+                    disabled={selectedCount === 0}
+                  />
                 </View>
               </WobblyBox>
-            )}
-          </View>
-
-          {selectionMode && (
-            <WobblyBox
-              backgroundColor={colors.backgroundElement}
-              borderColor={colors.border}
-              borderWidth={1}
-              shadowOffset={0}
-              style={styles.bulkToolbar}
-              contentStyle={styles.bulkToolbarContent}
-            >
-              <View style={styles.bulkActionRow}>
-                <ChalkButton
-                  onPress={selectedCount === visibleSubscriptions.length ? () => setSelectedIds([]) : handleSelectAll}
-                  title={selectedCount === visibleSubscriptions.length
-                    ? t('dashboard.clearSelection')
-                    : t('dashboard.selectAll')}
-                  variant="secondary"
-                  disabled={visibleSubscriptions.length === 0}
-                />
-                <ChalkButton
-                  onPress={openBulkModal}
-                  title={t('dashboard.bulkEdit')}
-                  icon={Pencil}
-                  variant="primary"
-                  disabled={selectedCount === 0}
-                />
-                <ChalkButton
-                  onPress={handleDeleteSelected}
-                  title={t('dashboard.deleteSelected')}
-                  icon={Trash2}
-                  variant="outline"
-                  disabled={selectedCount === 0}
-                />
-              </View>
-            </WobblyBox>
+            </Animated.View>
           )}
         </View>
 
@@ -1177,23 +1238,21 @@ const styles = StyleSheet.create({
   filterArea: {
     marginBottom: Spacing.two,
     alignSelf: 'stretch',
+    alignItems: 'flex-end',
   },
   filterToggle: {
-    minHeight: 42,
+    width: 36,
+    height: 36,
     borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 14,
+    borderRadius: 6,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
-  },
-  filterToggleText: {
-    fontFamily: Fonts.heading,
-    fontSize: 14,
-    fontWeight: '700',
   },
   filterActiveDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
     width: 6,
     height: 6,
     borderRadius: 999,
@@ -1201,6 +1260,9 @@ const styles = StyleSheet.create({
   filterPanel: {
     marginTop: 8,
     alignSelf: 'stretch',
+  },
+  filterPanelMotion: {
+    width: '100%',
   },
   filterContent: {
     padding: 10,
@@ -1245,19 +1307,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   sortDirectionButton: {
-    minHeight: 42,
+    width: 42,
+    height: 42,
     borderWidth: 1,
     borderRadius: 10,
-    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-  },
-  sortDirectionText: {
-    fontFamily: Fonts.body,
-    fontSize: 12,
-    fontWeight: '600',
   },
   sectionTitle: {
     fontFamily: Fonts.heading,
@@ -1276,6 +1332,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  iconActionButton: {
+    width: 36,
+    height: 36,
+    borderWidth: 1,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  iconActionDot: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 6,
+    height: 6,
+    borderRadius: 999,
   },
   groupSection: {
     marginTop: Spacing.two,
