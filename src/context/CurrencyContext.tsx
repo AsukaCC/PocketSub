@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
 
 export const supportedCurrencies = ['USD', 'CNY', 'JPY', 'EUR', 'GBP', 'HKD', 'KRW', 'CAD', 'AUD'] as const;
 export type CurrencyCode = typeof supportedCurrencies[number];
@@ -8,7 +9,7 @@ type Rates = Record<CurrencyCode, number>;
 
 const STORAGE_KEY = '@pocketsub/display-currency-v1';
 const RATES_STORAGE_KEY = '@pocketsub/exchange-rates-v1';
-const DEFAULT_DISPLAY_CURRENCY: CurrencyCode = 'USD';
+const DEFAULT_DISPLAY_CURRENCY: CurrencyCode = 'CNY';
 
 const fallbackRates: Rates = {
   USD: 1,
@@ -70,6 +71,12 @@ function mergeRates(nextRates: Partial<Record<CurrencyCode, number>>): Rates {
 }
 
 async function fetchDailyRates(): Promise<StoredRates | null> {
+  // Frankfurter does not expose CORS headers, so browser requests fail before
+  // the response can be read. Web uses the cached or bundled fallback rates.
+  if (Platform.OS === 'web') {
+    return null;
+  }
+
   const response = await fetch('https://api.frankfurter.app/latest?from=USD');
   if (!response.ok) {
     return null;

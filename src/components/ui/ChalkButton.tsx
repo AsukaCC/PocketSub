@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   pressable: {
     alignSelf: 'flex-start',
     minHeight: 40,
-    borderRadius: 6,
+    borderRadius: 12,
     borderWidth: 1,
     overflow: 'hidden',
   },

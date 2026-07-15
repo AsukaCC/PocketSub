@@ -2,6 +2,52 @@ import dayjs from 'dayjs';
 
 export type BillingCycle = 'weekly' | 'monthly' | 'yearly';
 
+export function parseDateValue(value: string | undefined): dayjs.Dayjs {
+  if (!value) {
+    return dayjs('');
+  }
+
+  const trimmed = value.trim();
+  if (/^\d{10,13}$/.test(trimmed)) {
+    const numericValue = Number(trimmed);
+    return dayjs(trimmed.length === 10 ? numericValue * 1000 : numericValue);
+  }
+
+  return dayjs(trimmed);
+}
+
+/** Determine whether a subscription is still valid from its actual expiry date. */
+export function getExpiryStatus(
+  expiresAt: string | undefined,
+  fallback: 'active' | 'paused' | 'expired' = 'active',
+): 'active' | 'paused' | 'expired' {
+  const expiry = parseDateValue(expiresAt);
+  if (!expiry.isValid()) {
+    return fallback;
+  }
+
+  return expiry.startOf('day').isBefore(dayjs().startOf('day')) ? 'expired' : 'active';
+}
+
+export type ExpiryGroup = 'expired' | 'expiringSoon' | 'active';
+
+/** Bucket subscriptions for the dashboard's status-first list. */
+export function getExpiryGroup(expiresAt: string | undefined): ExpiryGroup {
+  const expiry = parseDateValue(expiresAt);
+  if (!expiry.isValid()) {
+    return 'active';
+  }
+
+  const daysUntilExpiry = expiry.startOf('day').diff(dayjs().startOf('day'), 'day');
+  if (daysUntilExpiry < 0) {
+    return 'expired';
+  }
+  if (daysUntilExpiry <= 7) {
+    return 'expiringSoon';
+  }
+  return 'active';
+}
+
 /**
  * Calculate the next billing date based on original startDate and billing cycle.
  */

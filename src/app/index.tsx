@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, Modal, Pressable, SafeAreaView, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Modal, Pressable, SafeAreaView, KeyboardAvoidingView, Platform, Alert, useWindowDimensions } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 import { PaperBackground } from '@/components/ui/PaperBackground';
 import { WobblyBox } from '@/components/ui/WobblyBox';
@@ -9,19 +9,20 @@ import { SubCard } from '@/components/SubCard';
 import { useSubscriptions } from '@/context/SubscriptionContext';
 import { useCustomTheme } from '@/context/ThemeContext';
 import { BottomTabInset, Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
-import { getNextBillingDate, getDaysRemaining } from '@/utils/date';
-import { Plus, AlertCircle, X, Check, WalletCards, Pencil, Trash2, ChevronDown, ChevronRight, Search, ArrowUp, ArrowDown } from 'lucide-react-native';
+import { formatDate, getExpiryGroup, getExpiryStatus, getNextBillingDate, getDaysRemaining, parseDateValue, type ExpiryGroup } from '@/utils/date';
+import { Plus, AlertCircle, X, Check, Pencil, Trash2, Calendar, ChevronDown, ChevronLeft, ChevronRight, Search, ArrowUp, ArrowDown } from 'lucide-react-native';
 import dayjs from 'dayjs';
 import { useI18n } from '@/context/I18nContext';
 import { supportedCurrencies, useCurrency, type CurrencyCode } from '@/context/CurrencyContext';
 import type { TranslationKey } from '@/i18n/translations';
-import { CATEGORIES as DEFAULT_CATEGORIES } from '@/utils/mockData';
-import type { Subscription, SubscriptionStatus } from '@/utils/mockData';
+import { CATEGORIES as DEFAULT_CATEGORIES } from '@/utils/subscription';
+import type { Subscription, SubscriptionStatus } from '@/utils/subscription';
 
 const COLORS: ('primary' | 'secondary' | 'accentGreen' | 'accentYellow')[] = ['primary', 'secondary', 'accentGreen', 'accentYellow'];
 const STATUS_OPTIONS: SubscriptionStatus[] = ['active', 'paused', 'expired'];
 type SortKey = 'createdAt' | 'expiresAt' | 'price';
 type SortDirection = 'asc' | 'desc';
+type PickerSelectionMode = 'calendar' | 'month' | 'year';
 type IconButtonIcon = React.ComponentType<{ size?: number; color?: string }>;
 
 interface IconActionButtonProps {
@@ -87,7 +88,10 @@ function getTimestamp(value: string | undefined, fallback = 0): number {
 
 function getSortableExpiry(subscription: Subscription): number {
   if (subscription.expiresAt) {
-    return getTimestamp(subscription.expiresAt);
+    const parsed = parseDateValue(subscription.expiresAt);
+    if (parsed.isValid()) {
+      return parsed.valueOf();
+    }
   }
   return getNextBillingDate(subscription.startDate, subscription.cycle).valueOf();
 }
@@ -109,7 +113,16 @@ function normalizeOptionalDate(value: string): string | undefined {
   if (!trimmed) {
     return undefined;
   }
-  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : undefined;
+  if (/^\d{10,13}$/.test(trimmed)) {
+    const parsedTimestamp = parseDateValue(trimmed);
+    return parsedTimestamp.isValid() ? String(parsedTimestamp.valueOf()) : undefined;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return undefined;
+  }
+
+  const parsed = dayjs(trimmed);
+  return parsed.isValid() ? String(parsed.startOf('day').valueOf()) : undefined;
 }
 
 export default function Dashboard() {
@@ -121,23 +134,27 @@ export default function Dashboard() {
     updateSubscriptions,
   } = useSubscriptions();
   const { colors, isDark } = useCustomTheme();
-  const { t, plural } = useI18n();
+  const { t, plural, locale } = useI18n();
   const { displayCurrency, convertAmount, formatCurrency } = useCurrency();
+  const { width } = useWindowDimensions();
+  const isCompactSummary = width < 360;
   
   // Modal states
   const [modalVisible, setModalVisible] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [currency, setCurrency] = useState<CurrencyCode>('USD');
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
+  const [expiryPickerVisible, setExpiryPickerVisible] = useState(false);
+  const [draftExpiryDate, setDraftExpiryDate] = useState('');
+  const [pickerMonth, setPickerMonth] = useState(() => dayjs().startOf('month'));
+  const [pickerSelectionMode, setPickerSelectionMode] = useState<PickerSelectionMode>('calendar');
   const [cycle, setCycle] = useState<'weekly' | 'monthly' | 'yearly'>('monthly');
   const [category, setCategory] = useState(t('category.Streaming'));
   const [group, setGroup] = useState('');
-  const [tagsInput, setTagsInput] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
-  const [status, setStatus] = useState<SubscriptionStatus>('active');
   const [subColor, setSubColor] = useState<'primary' | 'secondary' | 'accentGreen' | 'accentYellow'>('primary');
-  const [startDate, setStartDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkModalVisible, setBulkModalVisible] = useState(false);
@@ -152,6 +169,17 @@ export default function Dashboard() {
   const [sortKey, setSortKey] = useState<SortKey>('createdAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const pickerDays = useMemo(() => {
+    const firstDay = pickerMonth.startOf('month').startOf('week');
+    return Array.from({ length: 42 }, (_, index) => firstDay.add(index, 'day'));
+  }, [pickerMonth]);
+  const weekdayLabels = useMemo(() => {
+    const firstSunday = dayjs('2024-01-07');
+    const formatter = new Intl.DateTimeFormat(locale, { weekday: 'short' });
+    return Array.from({ length: 7 }, (_, index) => (
+      formatter.format(firstSunday.add(index, 'day').toDate())
+    ));
+  }, [locale]);
 
   // Calculate statistics
   const totalCost = subscriptions.reduce((sum, subscription) => {
@@ -215,14 +243,26 @@ export default function Dashboard() {
   }, [convertAmount, searchQuery, sortDirection, sortKey, subscriptions]);
   const selectedCount = selectedIds.length;
   const groupedSubscriptions = useMemo(() => {
-    const groups = new Map<string, Subscription[]>();
+    const groups = new Map<ExpiryGroup, Subscription[]>();
+    const groupOrder: ExpiryGroup[] = ['expired', 'expiringSoon', 'active'];
     visibleSubscriptions.forEach(subscription => {
-      const groupName = subscription.group?.trim() || t('dashboard.ungrouped');
-      const items = groups.get(groupName) ?? [];
-      groups.set(groupName, [...items, subscription]);
+      const group = getExpiryGroup(subscription.expiresAt);
+      const items = groups.get(group) ?? [];
+      groups.set(group, [...items, subscription]);
     });
-    return [...groups.entries()];
-  }, [visibleSubscriptions, t]);
+    return groupOrder
+      .filter(group => groups.has(group))
+      .map(group => [group, groups.get(group)!] as const);
+  }, [visibleSubscriptions]);
+  const expiryGroupLabel = (group: ExpiryGroup) => {
+    if (group === 'expired') {
+      return t('status.expired');
+    }
+    if (group === 'expiringSoon') {
+      return t('dashboard.expiringSoon');
+    }
+    return t('status.active');
+  };
   const filterActive = searchQuery.trim() !== '' || sortKey !== 'createdAt' || sortDirection !== 'desc';
   const getCategoryLabel = (categoryName: string) => (
     DEFAULT_CATEGORIES.includes(categoryName)
@@ -237,29 +277,58 @@ export default function Dashboard() {
     return matchedDefault ?? trimmed;
   };
 
+  const openExpiryPicker = () => {
+    const normalizedDate = normalizeOptionalDate(expiresAt);
+    const parsedDate = parseDateValue(normalizedDate);
+    const targetDate = parsedDate.isValid() ? parsedDate : dayjs();
+    setDraftExpiryDate(parsedDate.isValid() ? parsedDate.format('YYYY-MM-DD') : '');
+    setPickerMonth(targetDate.startOf('month'));
+    setPickerSelectionMode('calendar');
+    setExpiryPickerVisible(true);
+  };
+
+  const confirmExpiryPicker = () => {
+    setExpiresAt(normalizeOptionalDate(draftExpiryDate) ?? '');
+    setExpiryPickerVisible(false);
+  };
+
+  const formattedExpiryDate = (() => {
+    const parsedDate = parseDateValue(expiresAt);
+    return parsedDate.isValid() ? formatDate(parsedDate, locale) : undefined;
+  })();
+
+  const applyExpiryPreset = (amount: number, unit: 'day' | 'year') => {
+    setExpiresAt(normalizeOptionalDate(dayjs().add(amount, unit).format('YYYY-MM-DD')) ?? '');
+  };
+
   const handleAdd = () => {
     if (!name || !price || isNaN(parseFloat(price))) {
       return;
     }
     
-    // Simple date validator
-    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
-    const finalDate = datePattern.test(startDate) ? startDate : dayjs().format('YYYY-MM-DD');
     const finalCategory = getNormalizedCategory(category) || 'Other';
+    const normalizedExpiresAt = normalizeOptionalDate(expiresAt);
 
-    addSubscription({
+    const updates = {
       name,
       price: parseFloat(price),
       currency,
       cycle,
       category: finalCategory,
       group: group.trim() || undefined,
-      tags: parseTagsInput(tagsInput),
-      startDate: finalDate,
-      expiresAt: normalizeOptionalDate(expiresAt),
-      status,
+      expiresAt: normalizedExpiresAt,
+      status: getExpiryStatus(normalizedExpiresAt),
       color: subColor,
-    });
+    };
+
+    if (editingId) {
+      updateSubscriptions([editingId], updates);
+    } else {
+      addSubscription({
+        ...updates,
+        startDate: dayjs().format('YYYY-MM-DD'),
+      });
+    }
 
     // Reset Form
     setName('');
@@ -268,12 +337,40 @@ export default function Dashboard() {
     setCycle('monthly');
     setCategory(t('category.Streaming'));
     setGroup('');
-    setTagsInput('');
     setExpiresAt('');
-    setStatus('active');
     setSubColor('primary');
-    setStartDate(dayjs().format('YYYY-MM-DD'));
+    setEditingId(null);
     setModalVisible(false);
+  };
+
+  const resetSubscriptionForm = () => {
+    setName('');
+    setPrice('');
+    setCurrency('USD');
+    setCycle('monthly');
+    setCategory(t('category.Streaming'));
+    setGroup('');
+    setExpiresAt('');
+    setSubColor('primary');
+  };
+
+  const openAddModal = () => {
+    resetSubscriptionForm();
+    setEditingId(null);
+    setModalVisible(true);
+  };
+
+  const openEditModal = (subscription: Subscription) => {
+    setEditingId(subscription.id);
+    setName(subscription.name);
+    setPrice(String(subscription.price));
+    setCurrency((subscription.currency || 'USD').toUpperCase() as CurrencyCode);
+    setCycle(subscription.cycle);
+    setCategory(getCategoryLabel(subscription.category));
+    setGroup(subscription.group ?? '');
+    setExpiresAt(subscription.expiresAt ?? '');
+    setSubColor(subscription.color);
+    setModalVisible(true);
   };
 
   const toggleSelection = (id: string) => {
@@ -385,20 +482,44 @@ export default function Dashboard() {
             style={styles.summaryCard}
             contentStyle={styles.summaryContent}
           >
-            <View style={styles.summaryTop}>
-              <View style={styles.summaryIdentity}>
-                <View style={[styles.summaryIcon, { backgroundColor: colors.backgroundSelected }]}>
-                  <WalletCards size={21} color={colors.primary} />
-                </View>
-                <View>
-                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>{t('dashboard.monthlySpend')}</Text>
-                  <Text style={[styles.subCount, { color: colors.textSecondary }]}>{plural('dashboard.tracking', subscriptions.length)}</Text>
-                </View>
-              </View>
-              <View style={styles.totalWrapper}>
-                <Text style={[styles.totalNum, { color: colors.text }]}>
+            <View style={[styles.summaryTop, isCompactSummary && styles.summaryTopCompact]}>
+              <View style={[styles.totalWrapper, isCompactSummary && styles.totalWrapperCompact]}>
+                <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>
+                  {t('dashboard.monthlySpend')}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={[styles.totalNum, { color: colors.text }]}
+                >
                   {formatCurrency(totalCost, displayCurrency)}
                 </Text>
+              </View>
+              <View style={[styles.summaryActions, isCompactSummary && styles.summaryActionsCompact]}>
+                <View style={styles.listActions}>
+                  <IconActionButton
+                    onPress={handleToggleSelectionMode}
+                    accessibilityLabel={selectionMode ? t('common.done') : t('dashboard.manage')}
+                    icon={selectionMode ? Check : Pencil}
+                    variant="outline"
+                    active={selectionMode}
+                  />
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('dashboard.search')}
+                  accessibilityState={{ expanded: filterExpanded }}
+                  onPress={() => setFilterExpanded(prev => !prev)}
+                  style={[
+                    styles.filterToggle,
+                    {
+                      borderColor: filterActive ? colors.primary : colors.border,
+                      backgroundColor: filterActive ? colors.backgroundSelected : colors.backgroundElement,
+                    },
+                  ]}
+                >
+                  <Search size={18} color={filterActive ? colors.primary : colors.text} />
+                  {filterActive && <View style={[styles.filterActiveDot, { backgroundColor: colors.primary }]} />}
+                </Pressable>
               </View>
             </View>
           </WobblyBox>
@@ -421,7 +542,7 @@ export default function Dashboard() {
               </View>
               <Text style={[styles.warningText, { color: colors.text }]}>
                 {plural('dashboard.renewsSoon', urgentSubs.length, {
-                  names: urgentSubs.map(s => s.name).join(', '),
+                  names: urgentSubs.slice(0, 2).map(s => s.name).join(', '),
                 })}
               </Text>
             </WobblyBox>
@@ -434,44 +555,10 @@ export default function Dashboard() {
                 ? plural('dashboard.selected', selectedCount)
                 : t('dashboard.mySubscriptions')}
             </Text>
-            <View style={styles.listActions}>
-              <IconActionButton
-                onPress={handleToggleSelectionMode}
-                accessibilityLabel={selectionMode ? t('common.done') : t('dashboard.manage')}
-                icon={selectionMode ? Check : Pencil}
-                variant="outline"
-                active={selectionMode}
-              />
-              {!selectionMode && (
-                <IconActionButton
-                  onPress={() => setModalVisible(true)}
-                  accessibilityLabel={t('dashboard.add')}
-                  icon={Plus}
-                  variant="primary"
-                />
-              )}
-            </View>
           </View>
 
-          <View style={styles.filterArea}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('dashboard.search')}
-              accessibilityState={{ expanded: filterExpanded }}
-              onPress={() => setFilterExpanded(prev => !prev)}
-              style={[
-                styles.filterToggle,
-                {
-                  borderColor: filterActive ? colors.primary : colors.border,
-                  backgroundColor: filterActive ? colors.backgroundSelected : colors.backgroundElement,
-                },
-              ]}
-            >
-              <Search size={18} color={filterActive ? colors.primary : colors.text} />
-              {filterActive && <View style={[styles.filterActiveDot, { backgroundColor: colors.primary }]} />}
-            </Pressable>
-
-            {filterExpanded && (
+          {filterExpanded && (
+            <View style={styles.filterArea}>
               <Animated.View
                 entering={FadeInDown.duration(180)}
                 exiting={FadeOutUp.duration(140)}
@@ -485,45 +572,47 @@ export default function Dashboard() {
                   style={styles.filterPanel}
                   contentStyle={styles.filterContent}
                 >
-                  <ChalkInput
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    placeholder={t('dashboard.searchPlaceholder')}
-                    style={styles.searchInput}
-                    inputStyle={styles.searchInputText}
-                  />
-                  <View style={styles.sortCompactRow}>
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => setSortModalVisible(true)}
-                      style={[styles.sortSelectButton, { borderColor: colors.border }]}
-                    >
-                      <View style={styles.sortSelectTextGroup}>
-                        <Text style={[styles.filterLabel, { color: colors.textSecondary }]}>
-                          {t('dashboard.sortBy')}
-                        </Text>
-                        <Text style={[styles.sortSelectValue, { color: colors.text }]}>
-                          {t(`dashboard.sort.${sortKey}` as TranslationKey)}
-                        </Text>
-                      </View>
-                      <ChevronDown size={16} color={colors.textSecondary} />
-                    </Pressable>
+                  <View style={styles.filterControlRow}>
+                    <ChalkInput
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      placeholder={t('dashboard.searchPlaceholder')}
+                      style={styles.searchInput}
+                      inputStyle={styles.searchInputText}
+                    />
+                    <View style={styles.sortCompactRow}>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => setSortModalVisible(true)}
+                        style={[styles.sortSelectButton, { borderColor: colors.border }]}
+                      >
+                        <View style={styles.sortSelectTextGroup}>
+                          <Text style={[styles.filterLabel, { color: colors.textSecondary }]}>
+                            {t('dashboard.sortBy')}
+                          </Text>
+                          <Text style={[styles.sortSelectValue, { color: colors.text }]}>
+                            {t(`dashboard.sort.${sortKey}` as TranslationKey)}
+                          </Text>
+                        </View>
+                        <ChevronDown size={16} color={colors.textSecondary} />
+                      </Pressable>
 
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={t(sortDirection === 'asc' ? 'dashboard.sortAsc' : 'dashboard.sortDesc')}
-                      onPress={() => setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))}
-                      style={[styles.sortDirectionButton, { borderColor: colors.border }]}
-                    >
-                      {sortDirection === 'asc'
-                        ? <ArrowUp size={18} color={colors.text} />
-                        : <ArrowDown size={18} color={colors.text} />}
-                    </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={t(sortDirection === 'asc' ? 'dashboard.sortAsc' : 'dashboard.sortDesc')}
+                        onPress={() => setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))}
+                        style={[styles.sortDirectionButton, { borderColor: colors.border }]}
+                      >
+                        {sortDirection === 'asc'
+                          ? <ArrowUp size={18} color={colors.text} />
+                          : <ArrowDown size={18} color={colors.text} />}
+                      </Pressable>
+                    </View>
                   </View>
                 </WobblyBox>
               </Animated.View>
-            )}
-          </View>
+            </View>
+          )}
 
           {selectionMode && (
             <Animated.View
@@ -540,12 +629,20 @@ export default function Dashboard() {
               >
                 <View style={styles.bulkActionRow}>
                   <ChalkButton
+                    onPress={openAddModal}
+                    title={t('dashboard.add')}
+                    icon={Plus}
+                    variant="primary"
+                    style={styles.bulkActionButton}
+                  />
+                  <ChalkButton
                     onPress={selectedCount === visibleSubscriptions.length ? () => setSelectedIds([]) : handleSelectAll}
                     title={selectedCount === visibleSubscriptions.length
                       ? t('dashboard.clearSelection')
                       : t('dashboard.selectAll')}
                     variant="secondary"
                     disabled={visibleSubscriptions.length === 0}
+                    style={styles.bulkActionButton}
                   />
                   <ChalkButton
                     onPress={openBulkModal}
@@ -553,6 +650,7 @@ export default function Dashboard() {
                     icon={Pencil}
                     variant="primary"
                     disabled={selectedCount === 0}
+                    style={styles.bulkActionButton}
                   />
                   <ChalkButton
                     onPress={handleDeleteSelected}
@@ -560,6 +658,7 @@ export default function Dashboard() {
                     icon={Trash2}
                     variant="outline"
                     disabled={selectedCount === 0}
+                    style={styles.bulkActionButton}
                   />
                 </View>
               </WobblyBox>
@@ -588,21 +687,30 @@ export default function Dashboard() {
               </Text>
             </WobblyBox>
           ) : (
-            groupedSubscriptions.map(([groupName, groupSubscriptions]) => {
-              const collapsed = collapsedGroups[groupName] ?? false;
+            groupedSubscriptions.map(([group, groupSubscriptions]) => {
+              const groupName = expiryGroupLabel(group);
+              const collapsed = collapsedGroups[group] ?? false;
               return (
-                <View key={groupName} style={styles.groupSection}>
+                <View key={group} style={styles.groupSection}>
                   <Pressable
                     accessibilityRole="button"
                     accessibilityState={{ expanded: !collapsed }}
-                    onPress={() => toggleGroup(groupName)}
-                    style={({ pressed }) => [styles.groupHeader, pressed && styles.groupHeaderPressed]}
+                    onPress={() => toggleGroup(group)}
+                    style={({ pressed }) => [
+                      styles.groupHeader,
+                      { backgroundColor: colors.backgroundElement, borderColor: colors.border },
+                      pressed && styles.groupHeaderPressed,
+                    ]}
                   >
                     <View style={styles.groupTitleRow}>
                       {collapsed
                         ? <ChevronRight size={16} color={colors.textSecondary} />
                         : <ChevronDown size={16} color={colors.textSecondary} />}
-                      <Text style={[styles.groupTitle, { color: colors.text }]}>
+                      <Text
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                        style={[styles.groupTitle, { color: colors.text }]}
+                      >
                         {groupName}
                       </Text>
                     </View>
@@ -615,6 +723,7 @@ export default function Dashboard() {
                       key={sub.id}
                       subscription={sub}
                       onDelete={deleteSubscription}
+                      onEdit={openEditModal}
                       selectionMode={selectionMode}
                       selected={selectedIds.includes(sub.id)}
                       onToggleSelect={toggleSelection}
@@ -651,7 +760,7 @@ export default function Dashboard() {
                 <View style={styles.modalHandle} />
                 <View style={styles.modalHeader}>
                   <Text style={[styles.modalTitle, { color: colors.text }]}>
-                    {t('form.title')}
+                    {t(editingId ? 'form.editTitle' : 'form.title')}
                   </Text>
                   <Pressable
                     accessibilityRole="button"
@@ -670,6 +779,13 @@ export default function Dashboard() {
                   showsVerticalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
                 >
+                  <Text style={[styles.label, { color: colors.text }]}>{t('form.group')}</Text>
+                  <ChalkInput
+                    value={group}
+                    onChangeText={setGroup}
+                    placeholder={t('form.groupPlaceholder')}
+                  />
+
                   <Text style={[styles.label, { color: colors.text }]}>{t('form.name')}</Text>
                   <ChalkInput
                     value={name}
@@ -776,55 +892,50 @@ export default function Dashboard() {
                     })}
                   </View>
 
-                  <Text style={[styles.label, { color: colors.text }]}>{t('form.group')}</Text>
-                  <ChalkInput
-                    value={group}
-                    onChangeText={setGroup}
-                    placeholder={t('form.groupPlaceholder')}
-                  />
-
-                  <Text style={[styles.label, { color: colors.text }]}>{t('form.tags')}</Text>
-                  <ChalkInput
-                    value={tagsInput}
-                    onChangeText={setTagsInput}
-                    placeholder={t('form.tagsPlaceholder')}
-                  />
-
                   <Text style={[styles.label, { color: colors.text }]}>{t('form.expiresAt')}</Text>
-                  <ChalkInput
-                    value={expiresAt}
-                    onChangeText={setExpiresAt}
-                    placeholder={t('form.expiresAtPlaceholder')}
-                  />
-
-                  <Text style={[styles.label, { color: colors.text }]}>{t('form.status')}</Text>
-                  <View style={styles.optionsRow}>
-                    {STATUS_OPTIONS.map(option => {
-                      const selected = status === option;
-                      return (
-                        <Pressable
-                          key={option}
-                          onPress={() => setStatus(option)}
-                          style={[
-                            styles.optionBadge,
-                            {
-                              borderColor: selected ? colors.primary : colors.border,
-                              backgroundColor: selected ? colors.primary : colors.backgroundElement
-                            }
-                          ]}
-                        >
-                          <Text style={[
-                            styles.optionBadgeText,
-                            {
-                              color: selected ? (isDark ? '#101828' : '#ffffff') : colors.text,
-                              fontFamily: Fonts.body
-                            }
-                          ]}>
-                            {t(`status.${option}` as TranslationKey)}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t('form.expiresAt')}
+                    onPress={openExpiryPicker}
+                    style={({ pressed }) => [
+                      styles.datePickerTrigger,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: colors.backgroundElement,
+                      },
+                      pressed && styles.pressedRow,
+                    ]}
+                  >
+                    <Calendar size={18} color={expiresAt ? colors.primary : colors.textSecondary} />
+                    <Text
+                      numberOfLines={1}
+                      style={[styles.datePickerValue, { color: expiresAt ? colors.text : colors.textSecondary }]}
+                    >
+                      {formattedExpiryDate || t('form.expiresAtPlaceholder')}
+                    </Text>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </Pressable>
+                  <View style={styles.expiryPresetRow}>
+                    {([
+                      ['form.expiryPreset7Days', 7, 'day'],
+                      ['form.expiryPreset30Days', 30, 'day'],
+                      ['form.expiryPreset1Year', 1, 'year'],
+                    ] as const).map(([labelKey, amount, unit]) => (
+                      <Pressable
+                        key={labelKey}
+                        accessibilityRole="button"
+                        onPress={() => applyExpiryPreset(amount, unit)}
+                        style={({ pressed }) => [
+                          styles.expiryPresetButton,
+                          { borderColor: colors.border, backgroundColor: colors.backgroundElement },
+                          pressed && styles.pressedRow,
+                        ]}
+                      >
+                        <Text style={[styles.expiryPresetText, { color: colors.textSecondary }]}>
+                          {t(labelKey as TranslationKey)}
+                        </Text>
+                      </Pressable>
+                    ))}
                   </View>
 
                   <Text style={[styles.label, { color: colors.text }]}>{t('form.color')}</Text>
@@ -848,13 +959,6 @@ export default function Dashboard() {
                     })}
                   </View>
 
-                  <Text style={[styles.label, { color: colors.text }]}>{t('form.startDate')}</Text>
-                  <ChalkInput
-                    value={startDate}
-                    onChangeText={setStartDate}
-                    placeholder="YYYY-MM-DD"
-                  />
-                  
                   <View style={styles.formActions}>
                     <ChalkButton
                       onPress={handleAdd}
@@ -867,6 +971,214 @@ export default function Dashboard() {
                 </ScrollView>
               </WobblyBox>
             </KeyboardAvoidingView>
+          </View>
+        </Modal>
+
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={expiryPickerVisible}
+          onRequestClose={() => setExpiryPickerVisible(false)}
+        >
+          <View style={styles.sheetOverlay}>
+            <Pressable style={styles.sheetBackdrop} onPress={() => setExpiryPickerVisible(false)} />
+            <WobblyBox
+              backgroundColor={colors.backgroundElement}
+              borderColor={colors.border}
+              borderWidth={1}
+              shadowOffset={2}
+              style={styles.sheetBox}
+              contentStyle={styles.datePickerContent}
+            >
+              <View style={styles.modalHandle} />
+              <View style={styles.modalHeader}>
+                <View style={styles.modalTitleCopy}>
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>
+                    {t('form.expiresAt')}
+                  </Text>
+                  <Text style={[styles.datePickerSelected, { color: colors.textSecondary }]}>
+                    {draftExpiryDate || t('form.expiresAtPlaceholder')}
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('common.close')}
+                  onPress={() => setExpiryPickerVisible(false)}
+                  style={[styles.closeBtn, { borderColor: colors.border }]}
+                >
+                  <X size={20} color={colors.text} />
+                </Pressable>
+              </View>
+
+              <View style={styles.datePickerMonthRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('common.previousMonth')}
+                  onPress={() => {
+                    setPickerMonth(month => month.subtract(1, 'month'));
+                    setPickerSelectionMode('calendar');
+                  }}
+                  style={[styles.monthNavButton, { borderColor: colors.border }]}
+                >
+                  <ChevronLeft size={18} color={colors.text} />
+                </Pressable>
+                <View style={styles.quickPickerGroup}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={pickerMonth.format('YYYY')}
+                    onPress={() => setPickerSelectionMode('year')}
+                    style={[styles.quickPickerButton, { borderColor: colors.border }]}
+                  >
+                    <Text style={[styles.datePickerMonth, { color: colors.text }]}>
+                      {pickerMonth.format('YYYY')}
+                    </Text>
+                    <ChevronDown size={14} color={colors.textSecondary} />
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={pickerMonth.format('MM')}
+                    onPress={() => setPickerSelectionMode('month')}
+                    style={[styles.quickPickerButton, { borderColor: colors.border }]}
+                  >
+                    <Text style={[styles.datePickerMonth, { color: colors.text }]}>
+                      {pickerMonth.format('MM')}
+                    </Text>
+                    <ChevronDown size={14} color={colors.textSecondary} />
+                  </Pressable>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('common.nextMonth')}
+                  onPress={() => {
+                    setPickerMonth(month => month.add(1, 'month'));
+                    setPickerSelectionMode('calendar');
+                  }}
+                  style={[styles.monthNavButton, { borderColor: colors.border }]}
+                >
+                  <ChevronRight size={18} color={colors.text} />
+                </Pressable>
+              </View>
+
+              {pickerSelectionMode === 'calendar' && (
+                <>
+                  <View style={styles.dateWeekdayRow}>
+                    {weekdayLabels.map(label => (
+                      <Text key={label} style={[styles.dateWeekday, { color: colors.textSecondary }]}>
+                        {label}
+                      </Text>
+                    ))}
+                  </View>
+
+                  <View style={styles.dateGrid}>
+                    {pickerDays.map(day => {
+                      const dayValue = day.format('YYYY-MM-DD');
+                      const selected = draftExpiryDate === dayValue;
+                      const outsideMonth = day.month() !== pickerMonth.month();
+                      const isToday = dayValue === dayjs().format('YYYY-MM-DD');
+                      return (
+                        <Pressable
+                          key={dayValue}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          onPress={() => setDraftExpiryDate(dayValue)}
+                          style={({ pressed }) => [
+                            styles.dateCell,
+                            {
+                              backgroundColor: selected ? colors.primary : isToday ? colors.backgroundSelected : 'transparent',
+                              borderColor: selected ? colors.primary : isToday ? `${colors.primary}55` : 'transparent',
+                            },
+                            pressed && styles.pressedRow,
+                          ]}
+                        >
+                          <Text style={[styles.dateCellText, {
+                            color: selected ? (isDark ? '#101828' : '#ffffff') : outsideMonth ? colors.textSecondary : colors.text,
+                            opacity: outsideMonth ? 0.48 : 1,
+                          }]}>
+                            {day.date()}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+
+              {pickerSelectionMode === 'month' && (
+                <View style={styles.quickOptionGrid}>
+                  {Array.from({ length: 12 }, (_, monthIndex) => {
+                    const selected = pickerMonth.month() === monthIndex;
+                    return (
+                      <Pressable
+                        key={monthIndex}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        onPress={() => {
+                          setPickerMonth(month => month.month(monthIndex).startOf('month'));
+                          setPickerSelectionMode('calendar');
+                        }}
+                        style={({ pressed }) => [
+                          styles.quickOption,
+                          {
+                            backgroundColor: selected ? colors.primary : 'transparent',
+                            borderColor: selected ? colors.primary : colors.border,
+                          },
+                          pressed && styles.pressedRow,
+                        ]}
+                      >
+                        <Text style={[styles.quickOptionText, { color: selected ? (isDark ? '#101828' : '#ffffff') : colors.text }]}>
+                          {String(monthIndex + 1).padStart(2, '0')}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+
+              {pickerSelectionMode === 'year' && (
+                <View style={styles.quickOptionGrid}>
+                  {Array.from({ length: 12 }, (_, index) => pickerMonth.year() - 5 + index).map(year => {
+                    const selected = pickerMonth.year() === year;
+                    return (
+                      <Pressable
+                        key={year}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        onPress={() => {
+                          setPickerMonth(month => month.year(year).startOf('month'));
+                          setPickerSelectionMode('calendar');
+                        }}
+                        style={({ pressed }) => [
+                          styles.quickOption,
+                          {
+                            backgroundColor: selected ? colors.primary : 'transparent',
+                            borderColor: selected ? colors.primary : colors.border,
+                          },
+                          pressed && styles.pressedRow,
+                        ]}
+                      >
+                        <Text style={[styles.quickOptionText, { color: selected ? (isDark ? '#101828' : '#ffffff') : colors.text }]}>
+                          {year}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+
+              <View style={styles.datePickerActions}>
+                <ChalkButton
+                  title={t('common.clear')}
+                  onPress={() => setDraftExpiryDate('')}
+                  variant="outline"
+                />
+                <ChalkButton
+                  title={t('common.done')}
+                  onPress={confirmExpiryPicker}
+                  icon={Check}
+                  variant="primary"
+                />
+              </View>
+            </WobblyBox>
           </View>
         </Modal>
 
@@ -1151,7 +1463,7 @@ const styles = StyleSheet.create({
     paddingTop: 0,
   },
   summaryCard: {
-    marginBottom: Spacing.four,
+    marginBottom: Spacing.three,
     alignSelf: 'stretch',
   },
   summaryContent: {
@@ -1161,43 +1473,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: 16,
+    flexWrap: 'nowrap',
+    gap: 12,
   },
-  summaryIdentity: {
+  summaryTopCompact: {
+    alignItems: 'stretch',
+    flexWrap: 'wrap',
+  },
+  summaryActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    flexShrink: 1,
+    gap: 8,
   },
-  summaryIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
+  totalWrapper: {
+    flex: 1,
+    minWidth: 0,
+  },
+  totalWrapperCompact: {
+    flexBasis: '100%',
   },
   summaryLabel: {
     fontFamily: Fonts.body,
     fontSize: 13,
     fontWeight: '600',
-  },
-  totalWrapper: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
+    marginBottom: 3,
   },
   totalNum: {
     fontFamily: Fonts.heading,
-    fontSize: 36,
+    fontSize: 34,
     fontWeight: '700',
   },
-  subCount: {
-    fontFamily: Fonts.body,
-    fontSize: 13,
-    marginTop: 3,
+  summaryActionsCompact: {
+    alignSelf: 'flex-end',
   },
   warningBox: {
-    marginBottom: Spacing.four,
+    marginBottom: Spacing.three,
     alignSelf: 'stretch',
   },
   warningContent: {
@@ -1226,13 +1536,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
     marginBottom: Spacing.two,
-    marginTop: Spacing.two,
+    marginTop: 0,
   },
   listActions: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     gap: 8,
   },
   filterArea: {
@@ -1267,28 +1577,39 @@ const styles = StyleSheet.create({
   filterContent: {
     padding: 10,
   },
+  filterControlRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   filterLabel: {
     fontFamily: Fonts.heading,
     fontSize: 12,
     fontWeight: '700',
   },
   searchInput: {
+    flex: 1,
+    minWidth: 180,
     marginVertical: 0,
-    marginBottom: 8,
+    marginBottom: 0,
     paddingHorizontal: 10,
   },
   searchInputText: {
-    height: 34,
+    height: 42,
     fontSize: 14,
   },
   sortCompactRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
     gap: 6,
   },
   sortSelectButton: {
-    flex: 1,
-    minHeight: 42,
+    width: 160,
+    height: 48,
+    minHeight: 48,
     borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 12,
@@ -1307,8 +1628,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   sortDirectionButton: {
-    width: 42,
-    height: 42,
+    width: 48,
+    height: 48,
     borderWidth: 1,
     borderRadius: 10,
     flexDirection: 'row',
@@ -1325,19 +1646,24 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   bulkToolbarContent: {
-    padding: 12,
+    padding: 14,
   },
   bulkActionRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'stretch',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  bulkActionButton: {
+    flex: 1,
+    minWidth: 110,
+    alignSelf: 'stretch',
   },
   iconActionButton: {
     width: 36,
     height: 36,
     borderWidth: 1,
-    borderRadius: 6,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -1357,10 +1683,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
-    minHeight: 32,
-    borderRadius: 6,
-    paddingHorizontal: 4,
+    marginBottom: 10,
+    minHeight: 42,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
   },
   groupHeaderPressed: {
     opacity: 0.72,
@@ -1370,16 +1697,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     flex: 1,
+    minWidth: 0,
   },
   groupTitle: {
     fontFamily: Fonts.heading,
     fontSize: 15,
     fontWeight: '700',
+    flexShrink: 1,
   },
   groupCount: {
     fontFamily: Fonts.body,
     fontSize: 12,
     fontWeight: '600',
+    flexShrink: 0,
+    marginLeft: 8,
   },
   emptyCard: {
     marginTop: Spacing.four,
@@ -1411,7 +1742,7 @@ const styles = StyleSheet.create({
   },
   modalBox: {
     width: '100%',
-    borderRadius: 8,
+    borderRadius: 20,
     maxHeight: '100%',
   },
   modalContent: {
@@ -1468,6 +1799,45 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 6,
   },
+  datePickerTrigger: {
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  datePickerValue: {
+    flex: 1,
+    minWidth: 0,
+    fontFamily: Fonts.body,
+    fontSize: 15,
+  },
+  expiryPresetRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  expiryPresetButton: {
+    minHeight: 36,
+    flex: 1,
+    minWidth: 92,
+    borderWidth: 1,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  expiryPresetText: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  pressedRow: {
+    opacity: 0.72,
+  },
   optionsRow: {
     flexDirection: 'row',
     gap: 8,
@@ -1477,7 +1847,7 @@ const styles = StyleSheet.create({
   optionBadge: {
     minHeight: 36,
     borderWidth: 1,
-    borderRadius: 6,
+    borderRadius: 10,
     paddingVertical: 7,
     paddingHorizontal: 12,
     justifyContent: 'center',
@@ -1487,12 +1857,20 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   priceInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
   priceInput: {
-    marginBottom: 0,
+    flex: 1,
+    minWidth: 0,
+    height: 48,
+    marginVertical: 0,
   },
   currencySelectButton: {
+    width: 112,
+    flexShrink: 0,
+    height: 48,
     minHeight: 48,
     borderWidth: 1,
     borderRadius: 10,
@@ -1501,7 +1879,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    marginBottom: 4,
+    marginBottom: 0,
   },
   currencySelectCopy: {
     flex: 1,
@@ -1515,7 +1893,7 @@ const styles = StyleSheet.create({
   colorDot: {
     width: 32,
     height: 32,
-    borderRadius: 6,
+    borderRadius: 10,
     marginRight: 4,
   },
   formActions: {
@@ -1524,6 +1902,103 @@ const styles = StyleSheet.create({
   },
   saveBtn: {
     alignSelf: 'stretch',
+  },
+  datePickerContent: {
+    padding: 18,
+  },
+  datePickerSelected: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    marginTop: 3,
+  },
+  datePickerMonthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  quickPickerGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  quickPickerButton: {
+    minWidth: 72,
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  monthNavButton: {
+    width: 40,
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  datePickerMonth: {
+    fontFamily: Fonts.heading,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  dateWeekdayRow: {
+    flexDirection: 'row',
+    marginBottom: 4,
+  },
+  dateWeekday: {
+    width: '14.2857%',
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  dateGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 12,
+  },
+  dateCell: {
+    width: '14.2857%',
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateCellText: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  datePickerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  quickOptionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 8,
+    marginBottom: 12,
+  },
+  quickOption: {
+    width: '23%',
+    height: 40,
+    borderWidth: 1,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickOptionText: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    fontWeight: '600',
   },
   sheetOverlay: {
     flex: 1,

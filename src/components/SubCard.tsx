@@ -1,12 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import dayjs from 'dayjs';
 import { WobblyBox } from './ui/WobblyBox';
 import { useCustomTheme } from '@/context/ThemeContext';
-import { CATEGORIES, Subscription } from '@/utils/mockData';
-import { getNextBillingDate, getDaysRemaining, formatDate } from '@/utils/date';
+import { CATEGORIES, Subscription } from '@/utils/subscription';
+import { getExpiryGroup, getNextBillingDate, getDaysRemaining, formatDate, parseDateValue } from '@/utils/date';
 import { Fonts } from '@/constants/theme';
-import { Trash2, AlertTriangle, Calendar, Check } from 'lucide-react-native';
+import { Trash2, Check, Pencil } from 'lucide-react-native';
 import { useI18n } from '@/context/I18nContext';
 import { useCurrency } from '@/context/CurrencyContext';
 import type { TranslationKey } from '@/i18n/translations';
@@ -14,6 +13,7 @@ import type { TranslationKey } from '@/i18n/translations';
 interface SubCardProps {
   subscription: Subscription;
   onDelete: (id: string) => void;
+  onEdit?: (subscription: Subscription) => void;
   selectionMode?: boolean;
   selected?: boolean;
   onToggleSelect?: (id: string) => void;
@@ -22,29 +22,29 @@ interface SubCardProps {
 export function SubCard({
   subscription,
   onDelete,
+  onEdit,
   selectionMode = false,
   selected = false,
   onToggleSelect,
 }: SubCardProps) {
   const { colors, isDark } = useCustomTheme();
-  const { t, plural, locale } = useI18n();
+  const { t, locale } = useI18n();
   const { displayCurrency, convertAmount, formatCurrency } = useCurrency();
   
   const nextBilling = getNextBillingDate(subscription.startDate, subscription.cycle);
   const daysLeft = getDaysRemaining(nextBilling);
   const isUrgent = daysLeft <= 3;
-  const status = subscription.status ?? 'active';
+  const expiryGroup = getExpiryGroup(subscription.expiresAt);
   const tags = subscription.tags ?? [];
 
   const cardBg = isUrgent
     ? (isDark ? '#351b1b' : '#fff7f6')
     : colors.backgroundElement;
-  const statusColor = isUrgent ? colors.danger : colors.textSecondary;
-  const statusTextColor = status === 'expired'
+  const expiryColor = expiryGroup === 'expired'
     ? colors.danger
-    : status === 'paused'
+    : expiryGroup === 'expiringSoon'
       ? colors.accentYellow
-      : colors.secondary;
+      : colors.accentGreen;
   const convertedPrice = convertAmount(subscription.price, subscription.currency);
   const originalCurrency = subscription.currency.toUpperCase();
   const showOriginalPrice = originalCurrency !== displayCurrency;
@@ -59,9 +59,10 @@ export function SubCard({
     >
       <WobblyBox
         backgroundColor={cardBg}
-        borderColor={selected ? colors.primary : isUrgent ? colors.danger : colors.border}
+        borderColor={selected ? colors.primary : expiryColor}
         borderWidth={selected ? 2 : 1}
         shadowOffset={2}
+        style={styles.cardBox}
         contentStyle={styles.boxContent}
       >
         <View style={styles.header}>
@@ -93,21 +94,28 @@ export function SubCard({
                 : subscription.category}
               </Text>
             </View>
-            <View style={[styles.statusTag, { borderColor: `${statusTextColor}55` }]}>
-              <Text style={[styles.statusText, { color: statusTextColor }]}>
-                {t(`status.${status}` as TranslationKey)}
-              </Text>
-            </View>
           </View>
-          {!selectionMode && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('subscription.delete', { name: subscription.name })}
-              onPress={() => onDelete(subscription.id)}
-              style={[styles.deleteBtn, { borderColor: colors.border }]}
-            >
-              <Trash2 size={16} color={statusColor} />
-            </Pressable>
+          {selectionMode && (
+            <View style={styles.headerActions}>
+              {onEdit && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t('subscription.edit', { name: subscription.name })}
+                  onPress={() => onEdit(subscription)}
+                  style={[styles.deleteBtn, { borderColor: colors.border }]}
+                >
+                  <Pencil size={16} color={colors.textSecondary} />
+                </Pressable>
+              )}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('subscription.delete', { name: subscription.name })}
+                onPress={() => onDelete(subscription.id)}
+                style={[styles.deleteBtn, { borderColor: colors.border }]}
+              >
+                <Trash2 size={16} color={expiryColor} />
+              </Pressable>
+            </View>
           )}
         </View>
 
@@ -120,13 +128,11 @@ export function SubCard({
             )}
             {subscription.expiresAt && (
               <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                {t('subscription.expiresAt', { date: formatDate(dayjs(subscription.expiresAt), locale) })}
+                {t('subscription.expiresAt', { date: formatDate(parseDateValue(subscription.expiresAt), locale) })}
               </Text>
             )}
             {tags.map(tag => (
-              <View key={tag} style={[styles.tagPill, { borderColor: colors.border }]}>
-                <Text style={[styles.tagPillText, { color: colors.textSecondary }]}>#{tag}</Text>
-              </View>
+              <Text key={tag} style={[styles.tagPillText, { color: colors.textSecondary }]}>#{tag}</Text>
             ))}
           </View>
         )}
@@ -148,25 +154,6 @@ export function SubCard({
             )}
           </View>
 
-          <View style={styles.dateContainer}>
-            {isUrgent ? (
-              <View style={styles.urgentWarning}>
-                <AlertTriangle size={15} color={colors.danger} />
-                <Text style={[styles.daysLeftText, { color: colors.danger }]}>
-                  {daysLeft === 0
-                    ? t('subscription.today')
-                    : plural('subscription.daysLeft', daysLeft)}
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.normalDate}>
-                <Calendar size={13} color={colors.textSecondary} style={{ marginRight: 4 }} />
-                <Text style={[styles.dateText, { color: colors.textSecondary }]}>
-                  {formatDate(nextBilling, locale)} ({t('subscription.daysShort', { count: daysLeft })})
-                </Text>
-              </View>
-            )}
-          </View>
         </View>
       </WobblyBox>
     </Pressable>
@@ -178,6 +165,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     alignSelf: 'stretch',
   },
+  cardBox: {
+    borderRadius: 18,
+  },
   boxContent: {
     padding: 16,
   },
@@ -185,6 +175,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: 10,
   },
   checkbox: {
     width: 24,
@@ -209,30 +205,19 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   tag: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 5,
+    paddingVertical: 2,
+    paddingHorizontal: 7,
+    borderRadius: 8,
   },
   tagText: {
     fontFamily: Fonts.body,
     fontSize: 11,
     fontWeight: '600',
   },
-  statusTag: {
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 5,
-    borderWidth: 1,
-  },
-  statusText: {
-    fontFamily: Fonts.body,
-    fontSize: 11,
-    fontWeight: '700',
-  },
   deleteBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 6,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -240,33 +225,27 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginVertical: 10,
+    marginVertical: 9,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 10,
+    gap: 8,
+    marginTop: 8,
   },
   metaText: {
     fontFamily: Fonts.body,
     fontSize: 12,
   },
-  tagPill: {
-    borderWidth: 1,
-    borderRadius: 5,
-    paddingVertical: 2,
-    paddingHorizontal: 6,
-  },
   tagPillText: {
     fontFamily: Fonts.body,
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 10,
@@ -274,6 +253,7 @@ const styles = StyleSheet.create({
   priceContainer: {
     flexDirection: 'row',
     alignItems: 'baseline',
+    flexWrap: 'wrap',
   },
   price: {
     fontFamily: Fonts.heading,
@@ -288,27 +268,5 @@ const styles = StyleSheet.create({
   cycle: {
     fontFamily: Fonts.body,
     fontSize: 13,
-  },
-  dateContainer: {
-    alignItems: 'flex-end',
-    marginLeft: 'auto',
-  },
-  normalDate: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  dateText: {
-    fontFamily: Fonts.body,
-    fontSize: 13,
-  },
-  urgentWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  daysLeftText: {
-    fontFamily: Fonts.body,
-    fontSize: 13,
-    fontWeight: '600',
   },
 });

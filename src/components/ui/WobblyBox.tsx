@@ -29,13 +29,13 @@ export function WobblyBox({
   const finalBorderColor = borderColor || colors.border;
   const finalShadowColor = shadowColor || colors.border;
   const shadowStyle = Platform.OS === 'web'
-    ? (shadowOffset > 0 ? { boxShadow: '0 6px 18px rgba(16, 24, 40, 0.08)' } : {})
+    ? (shadowOffset > 0 ? { boxShadow: '0 3px 12px rgba(16, 24, 40, 0.07)' } : {})
     : {
         shadowColor: finalShadowColor,
         shadowOpacity: shadowOffset > 0 ? 0.08 : 0,
-        shadowRadius: shadowOffset > 0 ? 10 : 0,
-        shadowOffset: { width: 0, height: shadowOffset > 0 ? 3 : 0 },
-        elevation: shadowOffset > 0 ? 2 : 0,
+        shadowRadius: shadowOffset > 0 ? 7 : 0,
+        shadowOffset: { width: 0, height: shadowOffset > 0 ? 2 : 0 },
+        elevation: shadowOffset > 0 ? 1 : 0,
       };
 
   return (
@@ -60,7 +60,7 @@ export function WobblyBox({
 
 const styles = StyleSheet.create({
   wrapper: {
-    borderRadius: 8,
+    borderRadius: 16,
     overflow: 'hidden',
   },
   content: {

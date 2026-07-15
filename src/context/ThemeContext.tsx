@@ -111,6 +111,7 @@ export function CustomThemeProvider({ children }: { children: React.ReactNode })
     document.documentElement.style.backgroundColor = colors.background;
     document.documentElement.style.colorScheme = theme;
     document.body.style.backgroundColor = colors.background;
+    delete document.documentElement.dataset.themePending;
   }, [colors.background, theme]);
 
   return (

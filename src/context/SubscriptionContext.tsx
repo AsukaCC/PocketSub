@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Subscription, INITIAL_SUBSCRIPTIONS } from '@/utils/mockData';
+import { Subscription } from '@/utils/subscription';
 import { getMonthlyCost } from '@/utils/date';
 import { validateSubscriptions } from '@/utils/backup';
 
@@ -20,7 +20,7 @@ interface SubscriptionContextType {
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
 
 export function SubscriptionProvider({ children }: { children: React.ReactNode }) {
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>(INITIAL_SUBSCRIPTIONS);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {

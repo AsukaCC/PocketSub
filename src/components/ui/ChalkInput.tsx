@@ -64,11 +64,13 @@ export function ChalkInput({
 
 const styles = StyleSheet.create({
   container: {
-    marginVertical: 4,
+    height: 48,
+    marginVertical: 0,
     alignSelf: 'stretch',
     borderWidth: 1,
-    borderRadius: 6,
+    borderRadius: 12,
     paddingHorizontal: 12,
+    justifyContent: 'center',
   },
   input: {
     height: 42,

@@ -1,4 +1,4 @@
-import type { Subscription } from './mockData';
+import type { Subscription } from './subscription';
 
 export const BACKUP_SCHEMA = 'pocketsub.backup';
 export const BACKUP_VERSION = 1;
@@ -91,6 +91,19 @@ function isDateTime(value: string): boolean {
   return !Number.isNaN(Date.parse(value));
 }
 
+function isStoredDate(value: string): boolean {
+  if (isCalendarDate(value)) {
+    return true;
+  }
+  if (!/^\d{10,13}$/.test(value)) {
+    return false;
+  }
+
+  const numericValue = Number(value);
+  const timestamp = value.length === 10 ? numericValue * 1000 : numericValue;
+  return Number.isFinite(timestamp) && !Number.isNaN(new Date(timestamp).valueOf());
+}
+
 function parseSubscription(value: unknown, index: number): Subscription {
   const itemNumber = index + 1;
   if (!isRecord(value)) {
@@ -119,7 +132,7 @@ function parseSubscription(value: unknown, index: number): Subscription {
   if (typeof color !== 'string' || !COLOR_KEYS.has(color)) {
     throw new BackupError('invalidColor', { item: itemNumber });
   }
-  if (expiresAt && !isCalendarDate(expiresAt)) {
+  if (expiresAt && !isStoredDate(expiresAt)) {
     throw new BackupError('invalidDate', { item: itemNumber });
   }
   if (createdAt && !isDateTime(createdAt)) {

@@ -1,5 +1,5 @@
-import React from 'react';
-import { StyleSheet, View, Text, ScrollView, SafeAreaView, Platform, useWindowDimensions } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { StyleSheet, View, Text, ScrollView, SafeAreaView, Platform, Pressable, useWindowDimensions } from 'react-native';
 import { PaperBackground } from '@/components/ui/PaperBackground';
 import { WobblyBox } from '@/components/ui/WobblyBox';
 import { ChalkPie } from '@/components/ui/ChalkPie';
@@ -9,11 +9,11 @@ import { useCustomTheme } from '@/context/ThemeContext';
 import { BottomTabInset, Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { getMonthlyCost, getNextBillingDate } from '@/utils/date';
 import dayjs from 'dayjs';
-import { ChartPie, Lightbulb, TrendingUp } from 'lucide-react-native';
+import { ChartPie, Lightbulb, TrendingUp, Trophy, ChevronRight } from 'lucide-react-native';
 import { useI18n } from '@/context/I18nContext';
 import { useCurrency } from '@/context/CurrencyContext';
 import type { TranslationKey } from '@/i18n/translations';
-import { CATEGORIES } from '@/utils/mockData';
+import { CATEGORIES } from '@/utils/subscription';
 
 export default function StatisticsScreen() {
   const { subscriptions } = useSubscriptions();
@@ -21,6 +21,8 @@ export default function StatisticsScreen() {
   const { t, locale } = useI18n();
   const { convertAmount, displayCurrency, formatCurrency } = useCurrency();
   const { width } = useWindowDimensions();
+  const [selectedChart, setSelectedChart] = useState<'trend' | 'category'>('trend');
+  const [selectedRankingId, setSelectedRankingId] = useState<string | null>(null);
 
   // 1. Calculate Category breakdown for D3 Pie Chart
   const getPieData = () => {
@@ -83,7 +85,9 @@ export default function StatisticsScreen() {
   // 3. Highlighted stats cards
   const pieData = getPieData();
   const trendData = getTrendData();
-  const chartWidth = width >= 800 ? 400 : Math.min(Math.max(width - 96, 260), 320);
+  const chartWidth = width >= 800
+    ? Math.min(400, (width - Spacing.four * 2 - Spacing.three) / 2 - 32)
+    : Math.min(Math.max(width - 96, 260), 320);
 
   // Find most expensive subscription
   const maxSub = subscriptions.length > 0 
@@ -92,6 +96,16 @@ export default function StatisticsScreen() {
         - getMonthlyCost(convertAmount(a.price, a.currency), a.cycle)
       ))[0]
     : null;
+  const rankingData = useMemo(() => (
+    [...subscriptions]
+      .map(subscription => ({
+        subscription,
+        monthlyCost: getMonthlyCost(convertAmount(subscription.price, subscription.currency), subscription.cycle),
+      }))
+      .sort((a, b) => b.monthlyCost - a.monthlyCost)
+      .slice(0, 5)
+  ), [convertAmount, subscriptions]);
+  const rankingMax = rankingData[0]?.monthlyCost ?? 0;
 
   return (
     <PaperBackground>
@@ -127,9 +141,14 @@ export default function StatisticsScreen() {
                   contentStyle={styles.chartContent}
                 >
                   <View style={styles.chartHeader}>
-                    <View style={[styles.chartIcon, { backgroundColor: colors.backgroundSelected }]}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t('analytics.trendTitle')}
+                      style={[styles.chartIcon, { backgroundColor: selectedChart === 'trend' ? colors.primary : colors.backgroundSelected }]}
+                      onPress={() => setSelectedChart('trend')}
+                    >
                       <TrendingUp size={18} color={colors.primary} />
-                    </View>
+                    </Pressable>
                     <View style={styles.chartHeadingCopy}>
                       <Text style={[styles.chartTitle, { color: colors.text }]}>{t('analytics.trendTitle')}</Text>
                       <Text style={[styles.chartSubtitle, { color: colors.textSecondary }]}>{t('analytics.trendSubtitle')}</Text>
@@ -147,9 +166,14 @@ export default function StatisticsScreen() {
                   contentStyle={styles.chartContent}
                 >
                   <View style={styles.chartHeader}>
-                    <View style={[styles.chartIcon, { backgroundColor: colors.backgroundSelected }]}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t('analytics.categoryTitle')}
+                      style={[styles.chartIcon, { backgroundColor: selectedChart === 'category' ? colors.secondary : colors.backgroundSelected }]}
+                      onPress={() => setSelectedChart('category')}
+                    >
                       <ChartPie size={18} color={colors.secondary} />
-                    </View>
+                    </Pressable>
                     <View style={styles.chartHeadingCopy}>
                       <Text style={[styles.chartTitle, { color: colors.text }]}>{t('analytics.categoryTitle')}</Text>
                       <Text style={[styles.chartSubtitle, { color: colors.textSecondary }]}>{t('analytics.categorySubtitle')}</Text>
@@ -158,6 +182,62 @@ export default function StatisticsScreen() {
                   <ChalkPie data={pieData} size={180} />
                 </WobblyBox>
               </View>
+
+              <WobblyBox
+                backgroundColor={colors.backgroundElement}
+                borderColor={colors.border}
+                borderWidth={1}
+                shadowOffset={1}
+                style={styles.rankingCard}
+                contentStyle={styles.rankingContent}
+              >
+                <View style={styles.rankingHeader}>
+                  <View style={[styles.rankingIcon, { backgroundColor: colors.backgroundSelected }]}>
+                    <Trophy size={18} color={colors.accentYellow} />
+                  </View>
+                  <View style={styles.chartHeadingCopy}>
+                    <Text style={[styles.chartTitle, { color: colors.text }]}>{t('analytics.rankingTitle')}</Text>
+                    <Text style={[styles.chartSubtitle, { color: colors.textSecondary }]}>{t('analytics.rankingSubtitle')}</Text>
+                  </View>
+                </View>
+                <View style={styles.rankingList}>
+                  {rankingData.map(({ subscription, monthlyCost }, index) => {
+                    const selected = selectedRankingId === subscription.id;
+                    const ratio = rankingMax > 0 ? monthlyCost / rankingMax : 0;
+                    return (
+                      <View key={subscription.id}>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          onPress={() => setSelectedRankingId(selected ? null : subscription.id)}
+                          style={({ pressed }) => [styles.rankingRow, pressed && styles.rankingRowPressed]}
+                        >
+                          <Text style={[styles.rankNumber, { color: selected ? colors.primary : colors.textSecondary }]}>
+                            {index + 1}
+                          </Text>
+                          <View style={styles.rankingCopy}>
+                            <Text numberOfLines={1} style={[styles.rankingName, { color: colors.text }]}>
+                              {subscription.name}
+                            </Text>
+                            <View style={[styles.rankingTrack, { backgroundColor: colors.backgroundSelected }]}>
+                              <View style={[styles.rankingFill, { width: `${Math.max(ratio * 100, 4)}%`, backgroundColor: selected ? colors.primary : colors.accentGreen }]} />
+                            </View>
+                          </View>
+                          <Text style={[styles.rankingValue, { color: colors.text }]}>
+                            {formatCurrency(monthlyCost, displayCurrency)}
+                          </Text>
+                          <ChevronRight size={16} color={colors.textSecondary} />
+                        </Pressable>
+                        {selected && (
+                          <Text style={[styles.rankingDetail, { color: colors.textSecondary }]}>
+                            {t('analytics.rankingDetail', { cycle: t(`cycle.unit.${subscription.cycle}` as TranslationKey) })}
+                          </Text>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              </WobblyBox>
 
               {/* Largest recurring commitment */}
               {maxSub && (
@@ -209,7 +289,7 @@ const styles = StyleSheet.create({
   },
   mainTitle: {
     fontFamily: Fonts.heading,
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '700',
   },
   pageSubtitle: {
@@ -228,6 +308,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.three,
+    alignItems: 'flex-start',
   },
   chartBox: {
     flexBasis: 360,
@@ -235,19 +316,18 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   chartContent: {
-    padding: 18,
+    padding: 16,
     alignItems: 'stretch',
   },
   chartHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     marginBottom: 8,
   },
   chartIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 6,
+    width: 24,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -256,7 +336,7 @@ const styles = StyleSheet.create({
   },
   chartTitle: {
     fontFamily: Fonts.heading,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
   },
   chartSubtitle: {
@@ -268,6 +348,80 @@ const styles = StyleSheet.create({
     marginTop: Spacing.three,
     marginBottom: Spacing.four,
     alignSelf: 'stretch',
+  },
+  rankingCard: {
+    marginTop: Spacing.three,
+    alignSelf: 'stretch',
+  },
+  rankingContent: {
+    padding: 18,
+  },
+  rankingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  rankingIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rankingList: {
+    gap: 4,
+  },
+  rankingRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+  },
+  rankingRowPressed: {
+    opacity: 0.7,
+    backgroundColor: 'rgba(127, 127, 127, 0.08)',
+  },
+  rankNumber: {
+    width: 20,
+    fontFamily: Fonts.heading,
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  rankingCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 6,
+  },
+  rankingName: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  rankingTrack: {
+    height: 6,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  rankingFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  rankingValue: {
+    minWidth: 76,
+    fontFamily: Fonts.heading,
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+  rankingDetail: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    paddingLeft: 38,
+    paddingBottom: 6,
   },
   stickyContent: {
     padding: 18,

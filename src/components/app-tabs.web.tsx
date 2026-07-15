@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+/* eslint-disable react-hooks/immutability -- Reanimated shared values are intentionally mutable. */
+import { useCallback, useEffect, useState } from 'react';
 import {
   Tabs,
   TabList,
@@ -6,9 +7,11 @@ import {
   TabSlot,
   TabTriggerSlotProps,
   TabListProps,
+  type TabsDescriptor,
+  type TabsSlotRenderOptions,
 } from 'expo-router/ui';
 import { router, usePathname } from 'expo-router';
-import { LayoutChangeEvent, Pressable, Text, View, StyleSheet } from 'react-native';
+import { LayoutChangeEvent, Pressable, Text, View, StyleSheet, useWindowDimensions } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -23,7 +26,8 @@ import { useCustomTheme } from '@/context/ThemeContext';
 import { useI18n } from '@/context/I18nContext';
 
 const TAB_COUNT = 3;
-let routeTransitionActive = false;
+const PRISM_SIDE_COUNT = 6;
+const PRISM_STEP_DEGREES = 360 / PRISM_SIDE_COUNT;
 
 function getActiveTabIndex(pathname: string) {
   if (pathname.startsWith('/explore')) {
@@ -37,71 +41,106 @@ function getActiveTabIndex(pathname: string) {
   return 0;
 }
 
-function runRouteViewTransition(direction: 'forward' | 'back', navigate: () => void) {
-  if (
-    routeTransitionActive
-    || typeof document === 'undefined'
-    || !('startViewTransition' in document)
-  ) {
-    navigate();
-    return;
-  }
-
-  routeTransitionActive = true;
-  document.documentElement.dataset.routeTransition = direction;
-
-  try {
-    const transition = (document as any).startViewTransition(() => {
-      navigate();
-    });
-
-    transition.ready?.catch(() => undefined);
-    transition.updateCallbackDone?.catch(() => undefined);
-    (transition.finished ?? Promise.resolve())
-      .catch(() => undefined)
-      .finally(() => {
-        routeTransitionActive = false;
-        delete document.documentElement.dataset.routeTransition;
-      });
-  } catch {
-    routeTransitionActive = false;
-    delete document.documentElement.dataset.routeTransition;
-    navigate();
-  }
-}
-
 export default function AppTabs() {
   const { t } = useI18n();
   const { colors } = useCustomTheme();
   const pathname = usePathname();
   const activeTabIndex = getActiveTabIndex(pathname);
+  const [isPrismReady, setIsPrismReady] = useState(false);
+  const { width } = useWindowDimensions();
+  const prismDepth = width * Math.sqrt(3) / 2;
+  const perspective = Math.max(width * 1.4, 900);
+  const renderPrismFace = useCallback((
+    descriptor: TabsDescriptor,
+    { index, isFocused, loaded }: TabsSlotRenderOptions
+  ) => (
+    <View
+      {...(!isFocused ? ({ 'aria-hidden': true } as any) : {})}
+      accessibilityElementsHidden={!isFocused}
+      importantForAccessibility={isFocused ? 'auto' : 'no-hide-descendants'}
+      pointerEvents={isFocused ? 'auto' : 'none'}
+      style={[
+        styles.prismFace,
+        {
+          backgroundColor: colors.background,
+          transform: [
+            { rotateY: `${index * PRISM_STEP_DEGREES}deg` },
+            { translateZ: prismDepth },
+          ],
+        },
+      ]}
+    >
+      {(loaded || isFocused) && descriptor.render()}
+    </View>
+  ), [colors.background, prismDepth]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setIsPrismReady(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
   return (
     <Tabs>
       <View
         style={[
           styles.sceneViewport,
-          { backgroundColor: colors.background, viewTransitionName: 'tab-page' } as any,
+          { backgroundColor: colors.background, perspective } as any,
         ]}
       >
-        <View style={[styles.tabContent, { backgroundColor: colors.background }]}>
-          <TabSlot style={{ height: '100%' }} />
+        <View
+          style={[
+            styles.prismDepth,
+            {
+              transform: [{ translateZ: -prismDepth }],
+            },
+          ]}
+        >
+          <View
+            {...({ dataSet: { prismStage: isPrismReady ? 'ready' : 'initial' } } as any)}
+            style={[
+              styles.prismStage,
+              { transform: [{ rotateY: `${activeTabIndex * -PRISM_STEP_DEGREES}deg` }] },
+            ]}
+          >
+            <TabSlot
+              detachInactiveScreens={false}
+              renderFn={renderPrismFace}
+              style={styles.prismFaces}
+            />
+            {[3, 4, 5].map(index => (
+              <View
+                key={index}
+                pointerEvents="none"
+                style={[
+                  styles.prismFace,
+                  styles.prismBackFace,
+                  {
+                    backgroundColor: colors.background,
+                    transform: [
+                      { rotateY: `${index * PRISM_STEP_DEGREES}deg` },
+                      { translateZ: prismDepth },
+                    ],
+                  },
+                ]}
+              />
+            ))}
+          </View>
         </View>
       </View>
       <TabList asChild>
         <CustomTabList>
           <TabTrigger name="home" href="/" asChild>
-            <TabButton activeTabIndex={activeTabIndex} tabIndex={0} icon={House}>
+            <TabButton activeTabIndex={activeTabIndex} menuIndex={0} icon={House}>
               {t('nav.home')}
             </TabButton>
           </TabTrigger>
           <TabTrigger name="explore" href="/explore" asChild>
-            <TabButton activeTabIndex={activeTabIndex} tabIndex={1} icon={ChartNoAxesCombined}>
+            <TabButton activeTabIndex={activeTabIndex} menuIndex={1} icon={ChartNoAxesCombined}>
               {t('nav.analytics')}
             </TabButton>
           </TabTrigger>
           <TabTrigger name="settings" href="/settings" asChild>
-            <TabButton activeTabIndex={activeTabIndex} tabIndex={2} icon={Settings2}>
+            <TabButton activeTabIndex={activeTabIndex} menuIndex={2} icon={Settings2}>
               {t('nav.settings')}
             </TabButton>
           </TabTrigger>
@@ -114,7 +153,7 @@ export default function AppTabs() {
 type TabButtonProps = TabTriggerSlotProps & {
   activeTabIndex: number;
   icon: LucideIcon;
-  tabIndex: number;
+  menuIndex: number;
 };
 
 export function TabButton({
@@ -123,8 +162,8 @@ export function TabButton({
   href,
   icon: Icon,
   isFocused,
+  menuIndex,
   onPress,
-  tabIndex,
   ...props
 }: TabButtonProps) {
   const colors = useTheme();
@@ -145,8 +184,11 @@ export function TabButton({
   return (
     <Pressable
       {...props}
+      {...({ href } as any)}
+      accessibilityRole="link"
+      accessibilityState={{ selected: isFocused }}
       onPress={(event) => {
-        if (tabIndex === activeTabIndex) {
+        if (menuIndex === activeTabIndex) {
           onPress?.(event);
           return;
         }
@@ -157,9 +199,7 @@ export function TabButton({
           return;
         }
 
-        runRouteViewTransition(tabIndex > activeTabIndex ? 'forward' : 'back', () => {
-          router.navigate(href as any);
-        });
+        router.navigate(href as any);
       }}
       style={({ pressed }) => [styles.tabButton, pressed && styles.pressed]}
     >
@@ -226,7 +266,7 @@ export function CustomTabList(props: TabListProps) {
   return (
     <View
       {...props}
-      style={[styles.tabListContainer, { viewTransitionName: 'bottom-tabs' } as any]}
+      style={styles.tabListContainer}
     >
       <View
         onLayout={handleLayout}
@@ -263,10 +303,37 @@ const styles = StyleSheet.create({
     height: '100%',
     overflow: 'hidden',
   },
-  tabContent: {
+  prismDepth: {
+    position: 'relative',
+    width: '100%',
     height: '100%',
-    transformOrigin: 'center center',
+    transformStyle: 'preserve-3d',
+  } as any,
+  prismStage: {
+    width: '100%',
+    height: '100%',
+    transformStyle: 'preserve-3d',
+    willChange: 'transform',
+  } as any,
+  prismFaces: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    transformStyle: 'preserve-3d',
+  } as any,
+  prismFace: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backfaceVisibility: 'hidden',
+    overflow: 'hidden',
+  } as any,
+  prismBackFace: {
+    opacity: 0.96,
   },
   tabListContainer: {
     position: 'absolute',

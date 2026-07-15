@@ -9,6 +9,7 @@ import {
   Switch,
   Text,
   Pressable,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { ChevronRight, CircleAlert, CircleCheck, Coins, Database, Download, Languages, Moon, Sun, Upload } from 'lucide-react-native';
@@ -75,6 +76,7 @@ export default function SettingsScreen() {
   const { colors, isDark, toggleTheme } = useCustomTheme();
   const { language, setLanguage, t, plural } = useI18n();
   const { displayCurrency, setDisplayCurrency, getCurrencyName, ratesDate } = useCurrency();
+  const { height } = useWindowDimensions();
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
@@ -152,6 +154,7 @@ export default function SettingsScreen() {
   const feedbackBackground = feedback?.type === 'success'
     ? (isDark ? '#123127' : '#f0fdf4')
     : (isDark ? '#351b1b' : '#fff7f6');
+  const currencyListMaxHeight = Math.max(160, height - 190);
 
   const handleSelectLanguage = (nextLanguage: Language) => {
     setLanguage(nextLanguage);
@@ -392,30 +395,36 @@ export default function SettingsScreen() {
               contentStyle={styles.selectSheetContent}
             >
               <Text style={[styles.selectTitle, { color: colors.text }]}>{t('settings.displayCurrency')}</Text>
-              {supportedCurrencies.map(option => {
-                const selected = displayCurrency === option;
-                return (
-                  <Pressable
-                    key={option}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    onPress={() => handleSelectCurrency(option)}
-                    style={({ pressed }) => [
-                      styles.selectOption,
-                      {
-                        borderColor: selected ? colors.primary : colors.border,
-                        backgroundColor: selected ? colors.backgroundSelected : 'transparent',
-                      },
-                      pressed && styles.pressedRow,
-                    ]}
-                  >
-                    <Text style={[styles.selectOptionText, { color: selected ? colors.primary : colors.text }]}>
-                      {getCurrencyName(option)}
-                    </Text>
-                    {selected && <CircleCheck size={18} color={colors.primary} />}
-                  </Pressable>
-                );
-              })}
+              <ScrollView
+                style={[styles.selectOptionScroll, { maxHeight: currencyListMaxHeight }]}
+                contentContainerStyle={styles.selectOptionList}
+                showsVerticalScrollIndicator={false}
+              >
+                {supportedCurrencies.map(option => {
+                  const selected = displayCurrency === option;
+                  return (
+                    <Pressable
+                      key={option}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      onPress={() => handleSelectCurrency(option)}
+                      style={({ pressed }) => [
+                        styles.selectOption,
+                        {
+                          borderColor: selected ? colors.primary : colors.border,
+                          backgroundColor: selected ? colors.backgroundSelected : 'transparent',
+                        },
+                        pressed && styles.pressedRow,
+                      ]}
+                    >
+                      <Text style={[styles.selectOptionText, { color: selected ? colors.primary : colors.text }]}>
+                        {getCurrencyName(option)}
+                      </Text>
+                      {selected && <CircleCheck size={18} color={colors.primary} />}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
               <ChalkButton
                 title={t('common.cancel')}
                 onPress={() => setCurrencyModalVisible(false)}
@@ -444,7 +453,7 @@ const styles = StyleSheet.create({
   },
   mainTitle: {
     fontFamily: Fonts.heading,
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '700',
   },
   pageSubtitle: {
@@ -459,7 +468,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
   },
   dataContent: {
-    padding: 20,
+    padding: 16,
   },
   languageCard: {
     marginBottom: Spacing.three,
@@ -467,12 +476,12 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   sectionIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 6,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -481,7 +490,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontFamily: Fonts.heading,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   sectionSubtitle: {
@@ -491,7 +500,7 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    marginVertical: 18,
+    marginVertical: 16,
   },
   actionRow: {
     flexDirection: 'row',
@@ -512,7 +521,7 @@ const styles = StyleSheet.create({
   rowIcon: {
     width: 34,
     height: 34,
-    borderRadius: 6,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -549,7 +558,7 @@ const styles = StyleSheet.create({
   feedback: {
     minHeight: 48,
     borderWidth: 1,
-    borderRadius: 6,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -578,6 +587,7 @@ const styles = StyleSheet.create({
   selectSheetContent: {
     padding: 16,
     gap: 8,
+    flexShrink: 1,
   },
   selectTitle: {
     fontFamily: Fonts.heading,
@@ -588,12 +598,21 @@ const styles = StyleSheet.create({
   selectOption: {
     minHeight: 46,
     borderWidth: 1,
-    borderRadius: 6,
+    borderRadius: 12,
     paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  selectOptionScroll: {
+    alignSelf: 'stretch',
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  selectOptionList: {
+    gap: 8,
+    paddingBottom: 2,
   },
   selectOptionText: {
     fontFamily: Fonts.body,
