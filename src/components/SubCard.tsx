@@ -28,14 +28,27 @@ export function SubCard({
   onToggleSelect,
 }: SubCardProps) {
   const { colors, isDark } = useCustomTheme();
-  const { t, locale } = useI18n();
+  const { t, plural, locale } = useI18n();
   const { displayCurrency, convertAmount, formatCurrency } = useCurrency();
   
   const nextBilling = getNextBillingDate(subscription.startDate, subscription.cycle);
   const daysLeft = getDaysRemaining(nextBilling);
   const isUrgent = daysLeft <= 3;
   const expiryGroup = getExpiryGroup(subscription.expiresAt);
-  const tags = subscription.tags ?? [];
+  const expiryDate = parseDateValue(subscription.expiresAt);
+  const hasExpiryDate = expiryDate.isValid();
+  const expiryDays = expiryDate.isValid() ? getDaysRemaining(expiryDate) : undefined;
+  const expiryDaysLabel = expiryDays === undefined
+    ? undefined
+    : expiryDays === 0
+      ? t('subscription.today')
+    : expiryDays < 0
+      ? plural('subscription.daysExpired', Math.abs(expiryDays))
+      : plural('subscription.daysLeft', expiryDays);
+
+  const billingDaysLabel = daysLeft === 0
+    ? t('subscription.today')
+    : plural('subscription.daysLeft', Math.max(0, daysLeft));
 
   const cardBg = isUrgent
     ? (isDark ? '#351b1b' : '#fff7f6')
@@ -81,19 +94,6 @@ export function SubCard({
             <Text style={[styles.name, { color: colors.text }]}>
               {subscription.name}
             </Text>
-            <View style={[
-              styles.tag, 
-              { 
-                backgroundColor: colors[subscription.color] + (isDark ? '25' : '15'), 
-                borderColor: colors[subscription.color] 
-              }
-            ]}>
-              <Text style={[styles.tagText, { color: colors[subscription.color] }]}>
-                {CATEGORIES.includes(subscription.category)
-                  ? t(`category.${subscription.category}` as TranslationKey)
-                : subscription.category}
-              </Text>
-            </View>
           </View>
           {selectionMode && (
             <View style={styles.headerActions}>
@@ -119,27 +119,7 @@ export function SubCard({
           )}
         </View>
 
-        {(subscription.group || tags.length > 0 || subscription.expiresAt) && (
-          <View style={styles.metaRow}>
-            {subscription.group && (
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                {t('subscription.group', { group: subscription.group })}
-              </Text>
-            )}
-            {subscription.expiresAt && (
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                {t('subscription.expiresAt', { date: formatDate(parseDateValue(subscription.expiresAt), locale) })}
-              </Text>
-            )}
-            {tags.map(tag => (
-              <Text key={tag} style={[styles.tagPillText, { color: colors.textSecondary }]}>#{tag}</Text>
-            ))}
-          </View>
-        )}
-
-        <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-        <View style={styles.footer}>
+        <View style={styles.metaRow}>
           <View style={styles.priceContainer}>
             <Text style={[styles.price, { color: colors.text }]}>
               {formatCurrency(convertedPrice)}
@@ -153,7 +133,33 @@ export function SubCard({
               </Text>
             )}
           </View>
+          <View style={[
+            styles.tag,
+            {
+              backgroundColor: colors[subscription.color] + (isDark ? '25' : '15'),
+              borderColor: colors[subscription.color],
+            },
+          ]}>
+            <Text style={[styles.tagText, { color: colors[subscription.color] }]}>
+              {CATEGORIES.includes(subscription.category)
+                ? t(`category.${subscription.category}` as TranslationKey)
+                : subscription.category}
+            </Text>
+          </View>
+        </View>
 
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+        <View style={styles.footer}>
+          <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+            {hasExpiryDate 
+              ? t('subscription.expiresAt', { date: formatDate(expiryDate, locale) })
+              : t('subscription.nextBilling', { date: formatDate(nextBilling, locale) })
+            }
+          </Text>
+          <Text style={[styles.expiryCountdown, { color: hasExpiryDate ? expiryColor : (isUrgent ? colors.accentYellow : colors.text) }]}>
+            {hasExpiryDate ? expiryDaysLabel : billingDaysLabel}
+          </Text>
         </View>
       </WobblyBox>
     </Pressable>
@@ -166,10 +172,10 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   cardBox: {
-    borderRadius: 18,
+    borderRadius: 20,
   },
   boxContent: {
-    padding: 16,
+    padding: 18,
   },
   header: {
     flexDirection: 'row',
@@ -208,6 +214,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     paddingHorizontal: 7,
     borderRadius: 8,
+    marginLeft: 'auto',
   },
   tagText: {
     fontFamily: Fonts.body,
@@ -225,14 +232,14 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginVertical: 9,
+    marginVertical: 12,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 8,
-    marginTop: 8,
+    marginTop: 10,
   },
   metaText: {
     fontFamily: Fonts.body,
@@ -245,10 +252,17 @@ const styles = StyleSheet.create({
   },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 10,
+  },
+  expiryCountdown: {
+    fontFamily: Fonts.heading,
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 'auto',
+    textAlign: 'right',
   },
   priceContainer: {
     flexDirection: 'row',

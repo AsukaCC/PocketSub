@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, Text, ScrollView, Modal, Pressable, SafeAreaView, KeyboardAvoidingView, Platform, Alert, useWindowDimensions } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 import { PaperBackground } from '@/components/ui/PaperBackground';
@@ -22,6 +22,7 @@ const COLORS: ('primary' | 'secondary' | 'accentGreen' | 'accentYellow')[] = ['p
 const STATUS_OPTIONS: SubscriptionStatus[] = ['active', 'paused', 'expired'];
 type SortKey = 'createdAt' | 'expiresAt' | 'price';
 type SortDirection = 'asc' | 'desc';
+type SubscriptionFilter = 'all' | ExpiryGroup;
 type PickerSelectionMode = 'calendar' | 'month' | 'year';
 type IconButtonIcon = React.ComponentType<{ size?: number; color?: string }>;
 
@@ -135,6 +136,7 @@ export default function Dashboard() {
   } = useSubscriptions();
   const { colors, isDark } = useCustomTheme();
   const { t, plural, locale } = useI18n();
+  const defaultCurrency: CurrencyCode = locale.startsWith('zh') ? 'CNY' : locale.startsWith('ja') ? 'JPY' : 'USD';
   const { displayCurrency, convertAmount, formatCurrency } = useCurrency();
   const { width } = useWindowDimensions();
   const isCompactSummary = width < 360;
@@ -144,7 +146,7 @@ export default function Dashboard() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
-  const [currency, setCurrency] = useState<CurrencyCode>('USD');
+  const [currency, setCurrency] = useState<CurrencyCode>(defaultCurrency);
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
   const [expiryPickerVisible, setExpiryPickerVisible] = useState(false);
   const [draftExpiryDate, setDraftExpiryDate] = useState('');
@@ -164,11 +166,13 @@ export default function Dashboard() {
   const [bulkExpiresAt, setBulkExpiresAt] = useState('');
   const [bulkStatus, setBulkStatus] = useState<SubscriptionStatus | 'unchanged'>('unchanged');
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterExpanded, setFilterExpanded] = useState(false);
+  const [searchModalVisible, setSearchModalVisible] = useState(false);
   const [sortModalVisible, setSortModalVisible] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('createdAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [subscriptionFilter, setSubscriptionFilter] = useState<SubscriptionFilter>('all');
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const groupSectionMetrics = useRef<Record<string, { bottom: number }>>({});
   const pickerDays = useMemo(() => {
     const firstDay = pickerMonth.startOf('month').startOf('week');
     return Array.from({ length: 42 }, (_, index) => firstDay.add(index, 'day'));
@@ -205,10 +209,17 @@ export default function Dashboard() {
     });
     return [...categories];
   }, [subscriptions]);
+  const statusFilteredSubscriptions = useMemo(() => {
+    if (subscriptionFilter === 'all') {
+      return subscriptions;
+    }
+
+    return subscriptions.filter(subscription => getExpiryGroup(subscription.expiresAt) === subscriptionFilter);
+  }, [subscriptionFilter, subscriptions]);
   const visibleSubscriptions = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
     const filtered = normalizedQuery
-      ? subscriptions.filter(subscription => {
+      ? statusFilteredSubscriptions.filter(subscription => {
           const searchableText = [
             subscription.name,
             subscription.category,
@@ -220,7 +231,7 @@ export default function Dashboard() {
             .toLowerCase();
           return searchableText.includes(normalizedQuery);
         })
-      : subscriptions;
+      : statusFilteredSubscriptions;
 
     return [...filtered].sort((a, b) => {
       let firstValue: number;
@@ -240,30 +251,35 @@ export default function Dashboard() {
       const result = firstValue - secondValue;
       return sortDirection === 'asc' ? result : -result;
     });
-  }, [convertAmount, searchQuery, sortDirection, sortKey, subscriptions]);
+  }, [convertAmount, searchQuery, sortDirection, sortKey, statusFilteredSubscriptions]);
   const selectedCount = selectedIds.length;
   const groupedSubscriptions = useMemo(() => {
-    const groups = new Map<ExpiryGroup, Subscription[]>();
-    const groupOrder: ExpiryGroup[] = ['expired', 'expiringSoon', 'active'];
+    const groups = new Map<string, Subscription[]>();
     visibleSubscriptions.forEach(subscription => {
-      const group = getExpiryGroup(subscription.expiresAt);
+      const group = subscription.group?.trim() || t('dashboard.ungrouped');
       const items = groups.get(group) ?? [];
       groups.set(group, [...items, subscription]);
     });
-    return groupOrder
-      .filter(group => groups.has(group))
-      .map(group => [group, groups.get(group)!] as const);
-  }, [visibleSubscriptions]);
-  const expiryGroupLabel = (group: ExpiryGroup) => {
-    if (group === 'expired') {
-      return t('status.expired');
-    }
-    if (group === 'expiringSoon') {
-      return t('dashboard.expiringSoon');
-    }
-    return t('status.active');
-  };
+    return [...groups.entries()].sort(([first], [second]) => {
+      const ungrouped = t('dashboard.ungrouped');
+      if (first === ungrouped) return 1;
+      if (second === ungrouped) return -1;
+      return first.localeCompare(second, locale);
+    });
+  }, [locale, t, visibleSubscriptions]);
   const filterActive = searchQuery.trim() !== '' || sortKey !== 'createdAt' || sortDirection !== 'desc';
+  const subscriptionFilterOptions: Array<{ key: SubscriptionFilter; label: string }> = [
+    { key: 'all', label: t('dashboard.filterAll') },
+    { key: 'expired', label: t('dashboard.filterExpired') },
+    { key: 'expiringSoon', label: t('dashboard.filterExpiringSoon') },
+    { key: 'active', label: t('dashboard.filterActive') },
+  ];
+  const selectSubscriptionFilter = (nextFilter: SubscriptionFilter) => {
+    setSubscriptionFilter(nextFilter);
+    setSelectedIds([]);
+    setCollapsedGroups({});
+    groupSectionMetrics.current = {};
+  };
   const getCategoryLabel = (categoryName: string) => (
     DEFAULT_CATEGORIES.includes(categoryName)
       ? t(`category.${categoryName}` as TranslationKey)
@@ -302,7 +318,7 @@ export default function Dashboard() {
   };
 
   const handleAdd = () => {
-    if (!name || !price || isNaN(parseFloat(price))) {
+    if (!name || !price || isNaN(parseFloat(price)) || !expiresAt || !group.trim()) {
       return;
     }
     
@@ -333,7 +349,7 @@ export default function Dashboard() {
     // Reset Form
     setName('');
     setPrice('');
-    setCurrency('USD');
+    setCurrency(defaultCurrency);
     setCycle('monthly');
     setCategory(t('category.Streaming'));
     setGroup('');
@@ -346,7 +362,7 @@ export default function Dashboard() {
   const resetSubscriptionForm = () => {
     setName('');
     setPrice('');
-    setCurrency('USD');
+    setCurrency(defaultCurrency);
     setCycle('monthly');
     setCategory(t('category.Streaming'));
     setGroup('');
@@ -469,6 +485,58 @@ export default function Dashboard() {
     setBulkModalVisible(false);
   };
 
+  const handleListScroll = (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    const scrollY = event.nativeEvent.contentOffset.y;
+    const groupToCollapse = groupedSubscriptions.find(([group]) => {
+      const sectionBottom = groupSectionMetrics.current[group]?.bottom;
+      return sectionBottom !== undefined
+        && sectionBottom <= scrollY + 8
+        && !(collapsedGroups[group] ?? false);
+    })?.[0];
+
+    if (groupToCollapse) {
+      setCollapsedGroups(currentGroups => ({
+        ...currentGroups,
+        [groupToCollapse]: true,
+      }));
+    }
+  };
+
+  const renderGroupHeader = (group: string, groupSubscriptions: Subscription[]) => {
+    const groupName = group;
+    const collapsed = collapsedGroups[group] ?? false;
+
+    return (
+      <Pressable
+        key={`${group}-header`}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: !collapsed }}
+        onPress={() => toggleGroup(group)}
+        style={({ pressed }) => [
+          styles.groupHeader,
+          { backgroundColor: colors.backgroundElement, borderColor: colors.border },
+          pressed && styles.groupHeaderPressed,
+        ]}
+      >
+        <View style={styles.groupTitleRow}>
+          {collapsed
+            ? <ChevronRight size={16} color={colors.textSecondary} />
+            : <ChevronDown size={16} color={colors.textSecondary} />}
+          <Text
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={[styles.groupTitle, { color: colors.text }]}
+          >
+            {groupName}
+          </Text>
+        </View>
+        <Text style={[styles.groupCount, { color: colors.textSecondary }]}>
+          {groupSubscriptions.length}
+        </Text>
+      </Pressable>
+    );
+  };
+
   return (
     <PaperBackground>
       <SafeAreaView style={styles.safeArea}>
@@ -507,8 +575,8 @@ export default function Dashboard() {
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={t('dashboard.search')}
-                  accessibilityState={{ expanded: filterExpanded }}
-                  onPress={() => setFilterExpanded(prev => !prev)}
+                  accessibilityState={{ expanded: searchModalVisible }}
+                  onPress={() => setSearchModalVisible(true)}
                   style={[
                     styles.filterToggle,
                     {
@@ -557,62 +625,35 @@ export default function Dashboard() {
             </Text>
           </View>
 
-          {filterExpanded && (
-            <View style={styles.filterArea}>
-              <Animated.View
-                entering={FadeInDown.duration(180)}
-                exiting={FadeOutUp.duration(140)}
-                style={styles.filterPanelMotion}
-              >
-                <WobblyBox
-                  backgroundColor={colors.backgroundElement}
-                  borderColor={colors.border}
-                  borderWidth={1}
-                  shadowOffset={0}
-                  style={styles.filterPanel}
-                  contentStyle={styles.filterContent}
+          <View style={[styles.subscriptionTabs, { borderColor: colors.border, backgroundColor: colors.backgroundElement }]} accessibilityRole="tablist">
+            {subscriptionFilterOptions.map(option => {
+              const selected = subscriptionFilter === option.key;
+              return (
+                <Pressable
+                  key={option.key}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}
+                  onPress={() => selectSubscriptionFilter(option.key)}
+                  style={[
+                    styles.subscriptionTab,
+                    {
+                      backgroundColor: selected ? colors.primary : 'transparent',
+                      borderColor: selected ? colors.primary : 'transparent',
+                    },
+                  ]}
                 >
-                  <View style={styles.filterControlRow}>
-                    <ChalkInput
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                      placeholder={t('dashboard.searchPlaceholder')}
-                      style={styles.searchInput}
-                      inputStyle={styles.searchInputText}
-                    />
-                    <View style={styles.sortCompactRow}>
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={() => setSortModalVisible(true)}
-                        style={[styles.sortSelectButton, { borderColor: colors.border }]}
-                      >
-                        <View style={styles.sortSelectTextGroup}>
-                          <Text style={[styles.filterLabel, { color: colors.textSecondary }]}>
-                            {t('dashboard.sortBy')}
-                          </Text>
-                          <Text style={[styles.sortSelectValue, { color: colors.text }]}>
-                            {t(`dashboard.sort.${sortKey}` as TranslationKey)}
-                          </Text>
-                        </View>
-                        <ChevronDown size={16} color={colors.textSecondary} />
-                      </Pressable>
-
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={t(sortDirection === 'asc' ? 'dashboard.sortAsc' : 'dashboard.sortDesc')}
-                        onPress={() => setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))}
-                        style={[styles.sortDirectionButton, { borderColor: colors.border }]}
-                      >
-                        {sortDirection === 'asc'
-                          ? <ArrowUp size={18} color={colors.text} />
-                          : <ArrowDown size={18} color={colors.text} />}
-                      </Pressable>
-                    </View>
-                  </View>
-                </WobblyBox>
-              </Animated.View>
-            </View>
-          )}
+                  <Text
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                    style={[styles.subscriptionTabText, { color: selected ? (isDark ? '#101828' : '#ffffff') : colors.textSecondary }]}
+                  >
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
           {selectionMode && (
             <Animated.View
@@ -666,11 +707,14 @@ export default function Dashboard() {
           )}
         </View>
 
-        <ScrollView
-          style={styles.listScroll}
-          contentContainerStyle={styles.listScrollContent}
-          showsVerticalScrollIndicator={false}
-        >
+        <View style={styles.listViewport}>
+          <ScrollView
+            style={styles.listScroll}
+            contentContainerStyle={styles.listScrollContent}
+            showsVerticalScrollIndicator={false}
+            onScroll={handleListScroll}
+            scrollEventThrottle={16}
+          >
 
           {/* Subscriptions List */}
           {subscriptions.length === 0 || visibleSubscriptions.length === 0 ? (
@@ -688,36 +732,18 @@ export default function Dashboard() {
             </WobblyBox>
           ) : (
             groupedSubscriptions.map(([group, groupSubscriptions]) => {
-              const groupName = expiryGroupLabel(group);
               const collapsed = collapsedGroups[group] ?? false;
               return (
-                <View key={group} style={styles.groupSection}>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ expanded: !collapsed }}
-                    onPress={() => toggleGroup(group)}
-                    style={({ pressed }) => [
-                      styles.groupHeader,
-                      { backgroundColor: colors.backgroundElement, borderColor: colors.border },
-                      pressed && styles.groupHeaderPressed,
-                    ]}
-                  >
-                    <View style={styles.groupTitleRow}>
-                      {collapsed
-                        ? <ChevronRight size={16} color={colors.textSecondary} />
-                        : <ChevronDown size={16} color={colors.textSecondary} />}
-                      <Text
-                        numberOfLines={1}
-                        ellipsizeMode="tail"
-                        style={[styles.groupTitle, { color: colors.text }]}
-                      >
-                        {groupName}
-                      </Text>
-                    </View>
-                    <Text style={[styles.groupCount, { color: colors.textSecondary }]}>
-                      {groupSubscriptions.length}
-                    </Text>
-                  </Pressable>
+                <View
+                  key={group}
+                  style={styles.groupSection}
+                  onLayout={event => {
+                    groupSectionMetrics.current[group] = {
+                      bottom: event.nativeEvent.layout.y + event.nativeEvent.layout.height,
+                    };
+                  }}
+                >
+                  {renderGroupHeader(group, groupSubscriptions)}
                   {!collapsed && groupSubscriptions.map(sub => (
                     <SubCard
                       key={sub.id}
@@ -735,7 +761,98 @@ export default function Dashboard() {
           )}
           
           <View style={{ height: Platform.OS === 'web' ? BottomTabInset : Spacing.six }} />
-        </ScrollView>
+          </ScrollView>
+
+        </View>
+
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={searchModalVisible}
+          onRequestClose={() => setSearchModalVisible(false)}
+        >
+          <View style={[styles.modalOverlay, styles.searchModalOverlay]}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={styles.modalKeyboardAvoiding}
+            >
+              <WobblyBox
+                backgroundColor={colors.backgroundElement}
+                borderColor={colors.border}
+                borderWidth={1}
+                shadowOffset={2}
+                style={styles.modalBox}
+                contentStyle={styles.searchModalContent}
+              >
+                <View style={styles.modalHeader}>
+                  <Text style={[styles.modalTitle, { color: colors.text }]}>
+                    {t('dashboard.search')}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t('common.close')}
+                    onPress={() => setSearchModalVisible(false)}
+                    style={[styles.closeBtn, { borderColor: colors.border }]}
+                  >
+                    <X size={20} color={colors.text} />
+                  </Pressable>
+                </View>
+
+                <ChalkInput
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder={t('dashboard.searchPlaceholder')}
+                  autoFocus
+                  style={styles.searchModalInput}
+                  inputStyle={styles.searchInputText}
+                />
+
+                <View style={styles.searchModalSortRow}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setSortModalVisible(true)}
+                    style={[styles.sortSelectButton, styles.searchModalSortSelect, { borderColor: colors.border }]}
+                  >
+                    <View style={styles.sortSelectTextGroup}>
+                      <Text style={[styles.filterLabel, { color: colors.textSecondary }]}>
+                        {t('dashboard.sortBy')}
+                      </Text>
+                      <Text style={[styles.sortSelectValue, { color: colors.text }]}>
+                        {t(`dashboard.sort.${sortKey}` as TranslationKey)}
+                      </Text>
+                    </View>
+                    <ChevronDown size={16} color={colors.textSecondary} />
+                  </Pressable>
+
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t(sortDirection === 'asc' ? 'dashboard.sortAsc' : 'dashboard.sortDesc')}
+                    onPress={() => setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))}
+                    style={[styles.sortDirectionButton, { borderColor: colors.border }]}
+                  >
+                    {sortDirection === 'asc'
+                      ? <ArrowUp size={18} color={colors.text} />
+                      : <ArrowDown size={18} color={colors.text} />}
+                  </Pressable>
+                </View>
+
+                <View style={styles.searchModalActions}>
+                  <ChalkButton
+                    title={t('common.clear')}
+                    onPress={() => setSearchQuery('')}
+                    variant="outline"
+                  />
+                  <ChalkButton
+                    title={t('common.done')}
+                    onPress={() => setSearchModalVisible(false)}
+                    icon={Check}
+                    variant="primary"
+                  />
+                </View>
+              </WobblyBox>
+            </KeyboardAvoidingView>
+          </View>
+        </Modal>
 
         {/* Modal for adding subscription */}
         <Modal
@@ -779,6 +896,7 @@ export default function Dashboard() {
                   showsVerticalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
                 >
+
                   <Text style={[styles.label, { color: colors.text }]}>{t('form.group')}</Text>
                   <ChalkInput
                     value={group}
@@ -891,6 +1009,8 @@ export default function Dashboard() {
                       );
                     })}
                   </View>
+
+
 
                   <Text style={[styles.label, { color: colors.text }]}>{t('form.expiresAt')}</Text>
                   <Pressable
@@ -1230,19 +1350,11 @@ export default function Dashboard() {
                   <Text style={[styles.bulkHelpText, { color: colors.textSecondary }]}>
                     {t('bulk.help')}
                   </Text>
-
                   <Text style={[styles.label, { color: colors.text }]}>{t('form.category')}</Text>
                   <ChalkInput
                     value={bulkCategory}
                     onChangeText={setBulkCategory}
                     placeholder={t('bulk.categoryPlaceholder')}
-                  />
-
-                  <Text style={[styles.label, { color: colors.text }]}>{t('form.group')}</Text>
-                  <ChalkInput
-                    value={bulkGroup}
-                    onChangeText={setBulkGroup}
-                    placeholder={t('form.groupPlaceholder')}
                   />
 
                   <Text style={[styles.label, { color: colors.text }]}>{t('form.tags')}</Text>
@@ -1455,6 +1567,10 @@ const styles = StyleSheet.create({
     flex: 1,
     alignSelf: 'stretch',
   },
+  listViewport: {
+    flex: 1,
+    position: 'relative',
+  },
   listScrollContent: {
     width: '100%',
     maxWidth: MaxContentWidth,
@@ -1538,17 +1654,37 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.two,
     marginTop: 0,
   },
+  subscriptionTabs: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 4,
+    padding: 4,
+    marginBottom: Spacing.two,
+    borderWidth: 1,
+    borderRadius: 12,
+  },
+  subscriptionTab: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1,
+    borderRadius: 8,
+  },
+  subscriptionTabText: {
+    fontFamily: Fonts.heading,
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
   listActions: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
     flexWrap: 'nowrap',
     gap: 8,
-  },
-  filterArea: {
-    marginBottom: Spacing.two,
-    alignSelf: 'stretch',
-    alignItems: 'flex-end',
   },
   filterToggle: {
     width: 36,
@@ -1567,44 +1703,39 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 999,
   },
-  filterPanel: {
-    marginTop: 8,
-    alignSelf: 'stretch',
+  searchModalContent: {
+    padding: 18,
   },
-  filterPanelMotion: {
-    width: '100%',
+  searchModalOverlay: {
+    justifyContent: 'center',
   },
-  filterContent: {
-    padding: 10,
+  searchModalInput: {
+    marginBottom: 14,
   },
-  filterControlRow: {
-    width: '100%',
+  searchModalSortRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
     gap: 8,
+  },
+  searchModalSortSelect: {
+    flex: 1,
+    width: 'auto',
+  },
+  searchModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 16,
   },
   filterLabel: {
     fontFamily: Fonts.heading,
     fontSize: 12,
     fontWeight: '700',
   },
-  searchInput: {
-    flex: 1,
-    minWidth: 180,
-    marginVertical: 0,
-    marginBottom: 0,
-    paddingHorizontal: 10,
-  },
   searchInputText: {
     height: 42,
     fontSize: 14,
-  },
-  sortCompactRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexShrink: 0,
-    gap: 6,
   },
   sortSelectButton: {
     width: 160,
@@ -1677,17 +1808,21 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   groupSection: {
+    alignSelf: 'stretch',
     marginTop: Spacing.two,
   },
   groupHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginTop: Spacing.two,
     marginBottom: 10,
     minHeight: 42,
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 12,
+    zIndex: 2,
+    elevation: 2,
   },
   groupHeaderPressed: {
     opacity: 0.72,
@@ -1787,17 +1922,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   formContainer: {
-    gap: 8,
-    paddingBottom: 18,
+    gap: 12,
+    paddingBottom: 24,
   },
   formScroll: {
     flexShrink: 1,
   },
   label: {
     fontFamily: Fonts.heading,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
-    marginTop: 6,
+    marginTop: 8,
+    marginBottom: -4,
   },
   datePickerTrigger: {
     height: 48,

@@ -1,5 +1,7 @@
 import { ThemeProvider } from 'expo-router';
 
+import '@/global.scss';
+
 import { CustomThemeProvider, useCustomTheme } from '@/context/ThemeContext';
 import { SubscriptionProvider } from '@/context/SubscriptionContext';
 import { I18nProvider } from '@/context/I18nContext';

@@ -9,6 +9,7 @@ interface ChalkInputProps {
   placeholder?: string;
   keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad';
   secureTextEntry?: boolean;
+  autoFocus?: boolean;
   style?: ViewStyle;
   inputStyle?: TextStyle;
 }
@@ -19,6 +20,7 @@ export function ChalkInput({
   placeholder,
   keyboardType = 'default',
   secureTextEntry = false,
+  autoFocus = false,
   style,
   inputStyle,
 }: ChalkInputProps) {
@@ -47,6 +49,7 @@ export function ChalkInput({
           placeholderTextColor={isDark ? '#667085' : '#98a2b3'}
           keyboardType={keyboardType}
           secureTextEntry={secureTextEntry}
+          autoFocus={autoFocus}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           style={[
