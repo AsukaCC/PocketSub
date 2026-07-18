@@ -123,8 +123,7 @@ export function TabButton({
   return (
     <Pressable
       {...props}
-      {...({ href } as any)}
-      accessibilityRole="link"
+      accessibilityRole="tab"
       accessibilityState={{ selected: isFocused }}
       onPress={(event) => {
         if (menuIndex === activeTabIndex) {

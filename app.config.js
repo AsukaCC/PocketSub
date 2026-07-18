@@ -1,7 +1,15 @@
-module.exports = ({ config }) => ({
-  ...config,
-  experiments: {
-    ...config.experiments,
-    ...(process.env.GITHUB_PAGES === 'true' ? { baseUrl: '/PocketSub' } : {}),
-  },
-});
+module.exports = ({ config }) => {
+  const isGitHubPages = process.env.GITHUB_PAGES === 'true';
+
+  return {
+    ...config,
+    web: {
+      ...config.web,
+      ...(isGitHubPages ? { output: 'single' } : {}),
+    },
+    experiments: {
+      ...config.experiments,
+      ...(isGitHubPages ? { baseUrl: '/PocketSub' } : {}),
+    },
+  };
+};

@@ -38,4 +38,4 @@ npm run build:pages
 npm run deploy:pages
 ```
 
-`build:pages` exports the static site to `dist` with the `/PocketSub` base path. `deploy:pages` rebuilds it and pushes the generated site to the `gh-pages` branch.
+`build:pages` exports a single-page app to `dist` with the `/PocketSub` base path, so in-app navigation preserves client state. `deploy:pages` rebuilds it and pushes the generated site to the `gh-pages` branch.
