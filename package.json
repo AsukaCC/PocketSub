@@ -2,6 +2,7 @@
   "name": "pocketsub",
   "main": "expo-router/entry",
   "version": "1.0.0",
+  "homepage": "https://asukacc.github.io/PocketSub/",
   "dependencies": {
     "@expo/ui": "~57.0.4",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -39,6 +40,7 @@
     "@types/react": "~19.2.2",
     "eslint": "^9.39.5",
     "eslint-config-expo": "^57.0.0",
+    "gh-pages": "^6.3.0",
     "sass": "^1.101.0",
     "typescript": "~6.0.3"
   },
@@ -48,6 +50,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "build:pages": "node ./scripts/build-pages.mjs",
+    "deploy:pages": "npm run build:pages && gh-pages -d dist -b gh-pages --nojekyll -m \"Deploy GitHub Pages\"",
     "lint": "expo lint"
   },
   "private": true

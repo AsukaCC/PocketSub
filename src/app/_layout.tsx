@@ -6,6 +6,8 @@ import { CustomThemeProvider, useCustomTheme } from '@/context/ThemeContext';
 import { SubscriptionProvider } from '@/context/SubscriptionContext';
 import { I18nProvider } from '@/context/I18nContext';
 import { CurrencyProvider } from '@/context/CurrencyContext';
+import { LedgerProvider } from '@/context/LedgerContext';
+import { CategoryProvider } from '@/context/CategoryContext';
 import AppTabs from '@/components/app-tabs';
 
 function LayoutContent() {
@@ -13,9 +15,13 @@ function LayoutContent() {
   return (
     <ThemeProvider value={navTheme}>
       <CurrencyProvider>
-        <SubscriptionProvider>
-          <AppTabs />
-        </SubscriptionProvider>
+        <LedgerProvider>
+          <CategoryProvider>
+            <SubscriptionProvider>
+              <AppTabs />
+            </SubscriptionProvider>
+          </CategoryProvider>
+        </LedgerProvider>
       </CurrencyProvider>
     </ThemeProvider>
   );

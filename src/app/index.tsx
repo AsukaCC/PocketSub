@@ -1,16 +1,17 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, Modal, Pressable, SafeAreaView, KeyboardAvoidingView, Platform, Alert, useWindowDimensions } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Pressable, SafeAreaView, Platform, Alert, useWindowDimensions } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 import { PaperBackground } from '@/components/ui/PaperBackground';
 import { WobblyBox } from '@/components/ui/WobblyBox';
 import { ChalkButton } from '@/components/ui/ChalkButton';
 import { ChalkInput } from '@/components/ui/ChalkInput';
+import { ViewportModal } from '@/components/ui/ViewportModal';
 import { SubCard } from '@/components/SubCard';
 import { useSubscriptions } from '@/context/SubscriptionContext';
 import { useCustomTheme } from '@/context/ThemeContext';
 import { BottomTabInset, Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
 import { formatDate, getExpiryGroup, getExpiryStatus, getNextBillingDate, getDaysRemaining, parseDateValue, type ExpiryGroup } from '@/utils/date';
-import { Plus, AlertCircle, X, Check, Pencil, Trash2, Calendar, ChevronDown, ChevronLeft, ChevronRight, Search, ArrowUp, ArrowDown } from 'lucide-react-native';
+import { Plus, AlertCircle, Check, Pencil, Trash2, Calendar, ChevronDown, ChevronLeft, ChevronRight, Search, ArrowUp, ArrowDown } from 'lucide-react-native';
 import dayjs from 'dayjs';
 import { useI18n } from '@/context/I18nContext';
 import { supportedCurrencies, useCurrency, type CurrencyCode } from '@/context/CurrencyContext';
@@ -18,7 +19,9 @@ import type { TranslationKey } from '@/i18n/translations';
 import { CATEGORIES as DEFAULT_CATEGORIES } from '@/utils/subscription';
 import type { Subscription, SubscriptionStatus } from '@/utils/subscription';
 
-const COLORS: ('primary' | 'secondary' | 'accentGreen' | 'accentYellow')[] = ['primary', 'secondary', 'accentGreen', 'accentYellow'];
+export { default } from '@/components/LedgerDashboard';
+
+
 const STATUS_OPTIONS: SubscriptionStatus[] = ['active', 'paused', 'expired'];
 type SortKey = 'createdAt' | 'expiresAt' | 'price';
 type SortDirection = 'asc' | 'desc';
@@ -126,7 +129,7 @@ function normalizeOptionalDate(value: string): string | undefined {
   return parsed.isValid() ? String(parsed.startOf('day').valueOf()) : undefined;
 }
 
-export default function Dashboard() {
+export function SubscriptionDashboard() {
   const {
     subscriptions,
     addSubscription,
@@ -256,7 +259,7 @@ export default function Dashboard() {
   const groupedSubscriptions = useMemo(() => {
     const groups = new Map<string, Subscription[]>();
     visibleSubscriptions.forEach(subscription => {
-      const group = subscription.group?.trim() || t('dashboard.ungrouped');
+      const group = subscription.group.trim() || t('dashboard.ungrouped');
       const items = groups.get(group) ?? [];
       groups.set(group, [...items, subscription]);
     });
@@ -268,7 +271,7 @@ export default function Dashboard() {
     });
   }, [locale, t, visibleSubscriptions]);
   const filterActive = searchQuery.trim() !== '' || sortKey !== 'createdAt' || sortDirection !== 'desc';
-  const subscriptionFilterOptions: Array<{ key: SubscriptionFilter; label: string }> = [
+  const subscriptionFilterOptions: { key: SubscriptionFilter; label: string }[] = [
     { key: 'all', label: t('dashboard.filterAll') },
     { key: 'expired', label: t('dashboard.filterExpired') },
     { key: 'expiringSoon', label: t('dashboard.filterExpiringSoon') },
@@ -313,8 +316,11 @@ export default function Dashboard() {
     return parsedDate.isValid() ? formatDate(parsedDate, locale) : undefined;
   })();
 
-  const applyExpiryPreset = (amount: number, unit: 'day' | 'year') => {
-    setExpiresAt(normalizeOptionalDate(dayjs().add(amount, unit).format('YYYY-MM-DD')) ?? '');
+  const applyExpiryPreset = (amount: number, unit: 'day' | 'month' | 'year') => {
+    const presetDate = dayjs().add(amount, unit);
+    setDraftExpiryDate(presetDate.format('YYYY-MM-DD'));
+    setPickerMonth(presetDate.startOf('month'));
+    setPickerSelectionMode('calendar');
   };
 
   const handleAdd = () => {
@@ -331,7 +337,7 @@ export default function Dashboard() {
       currency,
       cycle,
       category: finalCategory,
-      group: group.trim() || undefined,
+      group: group.trim(),
       expiresAt: normalizedExpiresAt,
       status: getExpiryStatus(normalizedExpiresAt),
       color: subColor,
@@ -383,7 +389,7 @@ export default function Dashboard() {
     setCurrency((subscription.currency || 'USD').toUpperCase() as CurrencyCode);
     setCycle(subscription.cycle);
     setCategory(getCategoryLabel(subscription.category));
-    setGroup(subscription.group ?? '');
+    setGroup(subscription.group);
     setExpiresAt(subscription.expiresAt ?? '');
     setSubColor(subscription.color);
     setModalVisible(true);
@@ -765,138 +771,83 @@ export default function Dashboard() {
 
         </View>
 
-        <Modal
-          animationType="fade"
-          transparent={true}
+        <ViewportModal
           visible={searchModalVisible}
-          onRequestClose={() => setSearchModalVisible(false)}
+          onClose={() => setSearchModalVisible(false)}
+          title={t('dashboard.search')}
+          maxWidth={520}
+          contentContainerStyle={styles.searchModalContent}
+          footer={(
+            <>
+              <ChalkButton
+                title={t('common.clear')}
+                onPress={() => setSearchQuery('')}
+                variant="outline"
+                style={styles.modalFooterButton}
+              />
+              <ChalkButton
+                title={t('common.done')}
+                onPress={() => setSearchModalVisible(false)}
+                icon={Check}
+                variant="primary"
+                style={styles.modalFooterButton}
+              />
+            </>
+          )}
         >
-          <View style={[styles.modalOverlay, styles.searchModalOverlay]}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-              style={styles.modalKeyboardAvoiding}
+          <ChalkInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder={t('dashboard.searchPlaceholder')}
+            autoFocus
+            style={styles.searchModalInput}
+            inputStyle={styles.searchInputText}
+          />
+
+          <View style={styles.searchModalSortRow}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setSortModalVisible(true)}
+              style={[styles.sortSelectButton, styles.searchModalSortSelect, { borderColor: colors.border }]}
             >
-              <WobblyBox
-                backgroundColor={colors.backgroundElement}
-                borderColor={colors.border}
-                borderWidth={1}
-                shadowOffset={2}
-                style={styles.modalBox}
-                contentStyle={styles.searchModalContent}
-              >
-                <View style={styles.modalHeader}>
-                  <Text style={[styles.modalTitle, { color: colors.text }]}>
-                    {t('dashboard.search')}
-                  </Text>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={t('common.close')}
-                    onPress={() => setSearchModalVisible(false)}
-                    style={[styles.closeBtn, { borderColor: colors.border }]}
-                  >
-                    <X size={20} color={colors.text} />
-                  </Pressable>
-                </View>
+              <View style={styles.sortSelectTextGroup}>
+                <Text style={[styles.filterLabel, { color: colors.textSecondary }]}>{t('dashboard.sortBy')}</Text>
+                <Text style={[styles.sortSelectValue, { color: colors.text }]}>
+                  {t(`dashboard.sort.${sortKey}` as TranslationKey)}
+                </Text>
+              </View>
+              <ChevronDown size={16} color={colors.textSecondary} />
+            </Pressable>
 
-                <ChalkInput
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  placeholder={t('dashboard.searchPlaceholder')}
-                  autoFocus
-                  style={styles.searchModalInput}
-                  inputStyle={styles.searchInputText}
-                />
-
-                <View style={styles.searchModalSortRow}>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => setSortModalVisible(true)}
-                    style={[styles.sortSelectButton, styles.searchModalSortSelect, { borderColor: colors.border }]}
-                  >
-                    <View style={styles.sortSelectTextGroup}>
-                      <Text style={[styles.filterLabel, { color: colors.textSecondary }]}>
-                        {t('dashboard.sortBy')}
-                      </Text>
-                      <Text style={[styles.sortSelectValue, { color: colors.text }]}>
-                        {t(`dashboard.sort.${sortKey}` as TranslationKey)}
-                      </Text>
-                    </View>
-                    <ChevronDown size={16} color={colors.textSecondary} />
-                  </Pressable>
-
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={t(sortDirection === 'asc' ? 'dashboard.sortAsc' : 'dashboard.sortDesc')}
-                    onPress={() => setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))}
-                    style={[styles.sortDirectionButton, { borderColor: colors.border }]}
-                  >
-                    {sortDirection === 'asc'
-                      ? <ArrowUp size={18} color={colors.text} />
-                      : <ArrowDown size={18} color={colors.text} />}
-                  </Pressable>
-                </View>
-
-                <View style={styles.searchModalActions}>
-                  <ChalkButton
-                    title={t('common.clear')}
-                    onPress={() => setSearchQuery('')}
-                    variant="outline"
-                  />
-                  <ChalkButton
-                    title={t('common.done')}
-                    onPress={() => setSearchModalVisible(false)}
-                    icon={Check}
-                    variant="primary"
-                  />
-                </View>
-              </WobblyBox>
-            </KeyboardAvoidingView>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t(sortDirection === 'asc' ? 'dashboard.sortAsc' : 'dashboard.sortDesc')}
+              onPress={() => setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))}
+              style={[styles.sortDirectionButton, { borderColor: colors.border }]}
+            >
+              {sortDirection === 'asc'
+                ? <ArrowUp size={18} color={colors.text} />
+                : <ArrowDown size={18} color={colors.text} />}
+            </Pressable>
           </View>
-        </Modal>
+        </ViewportModal>
 
-        {/* Modal for adding subscription */}
-        <Modal
-          animationType="fade"
-          transparent={true}
+        <ViewportModal
           visible={modalVisible}
-          onRequestClose={() => setModalVisible(false)}
+          onClose={() => setModalVisible(false)}
+          title={t(editingId ? 'form.editTitle' : 'form.title')}
+          maxWidth={520}
+          contentContainerStyle={styles.formContainer}
+          footer={(
+            <ChalkButton
+              onPress={handleAdd}
+              title={t('form.save')}
+              icon={Check}
+              variant="primary"
+              style={styles.modalFooterButton}
+            />
+          )}
         >
-          <View style={styles.modalOverlay}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-              style={styles.modalKeyboardAvoiding}
-            >
-              <WobblyBox
-                backgroundColor={colors.backgroundElement}
-                borderColor={colors.border}
-                borderWidth={1}
-                shadowOffset={2}
-                style={styles.modalBox}
-                contentStyle={styles.modalContent}
-              >
-                <View style={styles.modalHandle} />
-                <View style={styles.modalHeader}>
-                  <Text style={[styles.modalTitle, { color: colors.text }]}>
-                    {t(editingId ? 'form.editTitle' : 'form.title')}
-                  </Text>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={t('common.close')}
-                    onPress={() => setModalVisible(false)}
-                    style={[styles.closeBtn, { borderColor: colors.border }]}
-                  >
-                    <X size={20} color={colors.text} />
-                  </Pressable>
-                </View>
-
-                {/* Form Input fields */}
-                <ScrollView
-                  style={styles.formScroll}
-                  contentContainerStyle={styles.formContainer}
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
-                >
-
                   <Text style={[styles.label, { color: colors.text }]}>{t('form.group')}</Text>
                   <ChalkInput
                     value={group}
@@ -945,25 +896,24 @@ export default function Dashboard() {
                   </View>
 
                   <Text style={[styles.label, { color: colors.text }]}>{t('form.billingCycle')}</Text>
-                  <View style={styles.optionsRow}>
-                    {(['weekly', 'monthly', 'yearly'] as const).map(c => {
+                  <View style={[styles.cycleSwitchContainer, { borderColor: colors.border, backgroundColor: colors.backgroundElement }]}>
+                    {(['monthly', 'yearly'] as const).map(c => {
                       const selected = cycle === c;
                       return (
                         <Pressable
                           key={c}
                           onPress={() => setCycle(c)}
                           style={[
-                            styles.optionBadge,
+                            styles.cycleSwitchOption,
                             { 
-                              borderColor: selected ? colors.primary : colors.border,
-                              backgroundColor: selected ? colors.primary : colors.backgroundElement
+                              backgroundColor: selected ? colors.primary : 'transparent'
                             }
                           ]}
                         >
                           <Text style={[
-                            styles.optionBadgeText, 
+                            styles.cycleSwitchOptionText,
                             { 
-                              color: selected ? (isDark ? '#101828' : '#ffffff') : colors.text,
+                              color: selected ? (isDark ? '#101828' : '#ffffff') : colors.textSecondary,
                               fontFamily: Fonts.heading
                             }
                           ]}>
@@ -1035,99 +985,66 @@ export default function Dashboard() {
                     </Text>
                     <ChevronRight size={18} color={colors.textSecondary} />
                   </Pressable>
-                  <View style={styles.expiryPresetRow}>
-                    {([
-                      ['form.expiryPreset7Days', 7, 'day'],
-                      ['form.expiryPreset30Days', 30, 'day'],
-                      ['form.expiryPreset1Year', 1, 'year'],
-                    ] as const).map(([labelKey, amount, unit]) => (
-                      <Pressable
-                        key={labelKey}
-                        accessibilityRole="button"
-                        onPress={() => applyExpiryPreset(amount, unit)}
-                        style={({ pressed }) => [
-                          styles.expiryPresetButton,
-                          { borderColor: colors.border, backgroundColor: colors.backgroundElement },
-                          pressed && styles.pressedRow,
-                        ]}
-                      >
-                        <Text style={[styles.expiryPresetText, { color: colors.textSecondary }]}>
-                          {t(labelKey as TranslationKey)}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
+        </ViewportModal>
 
-                  <Text style={[styles.label, { color: colors.text }]}>{t('form.color')}</Text>
-                  <View style={styles.optionsRow}>
-                    {COLORS.map(col => {
-                      const selected = subColor === col;
-                      return (
-                        <Pressable
-                          key={col}
-                          onPress={() => setSubColor(col)}
-                          style={[
-                            styles.colorDot,
-                            { 
-                              backgroundColor: colors[col],
-                              borderColor: colors.border,
-                              borderWidth: selected ? 2 : 1
-                            }
-                          ]}
-                        />
-                      );
-                    })}
-                  </View>
-
-                  <View style={styles.formActions}>
-                    <ChalkButton
-                      onPress={handleAdd}
-                      title={t('form.save')}
-                      icon={Check}
-                      variant="primary"
-                      style={styles.saveBtn}
-                    />
-                  </View>
-                </ScrollView>
-              </WobblyBox>
-            </KeyboardAvoidingView>
-          </View>
-        </Modal>
-
-        <Modal
-          animationType="fade"
-          transparent={true}
+        <ViewportModal
           visible={expiryPickerVisible}
-          onRequestClose={() => setExpiryPickerVisible(false)}
+          onClose={() => setExpiryPickerVisible(false)}
+          title={t('form.expiresAt')}
+          subtitle={draftExpiryDate || t('form.expiresAtPlaceholder')}
+          maxWidth={520}
+          contentContainerStyle={styles.datePickerContent}
+          footer={(
+            <>
+              <ChalkButton
+                title={t('common.clear')}
+                onPress={() => setDraftExpiryDate('')}
+                variant="outline"
+                style={styles.modalFooterButton}
+              />
+              <ChalkButton
+                title={t('common.done')}
+                onPress={confirmExpiryPicker}
+                icon={Check}
+                variant="primary"
+                style={styles.modalFooterButton}
+              />
+            </>
+          )}
         >
-          <View style={styles.sheetOverlay}>
-            <Pressable style={styles.sheetBackdrop} onPress={() => setExpiryPickerVisible(false)} />
-            <WobblyBox
-              backgroundColor={colors.backgroundElement}
-              borderColor={colors.border}
-              borderWidth={1}
-              shadowOffset={2}
-              style={styles.sheetBox}
-              contentStyle={styles.datePickerContent}
-            >
-              <View style={styles.modalHandle} />
-              <View style={styles.modalHeader}>
-                <View style={styles.modalTitleCopy}>
-                  <Text style={[styles.modalTitle, { color: colors.text }]}>
-                    {t('form.expiresAt')}
-                  </Text>
-                  <Text style={[styles.datePickerSelected, { color: colors.textSecondary }]}>
-                    {draftExpiryDate || t('form.expiresAtPlaceholder')}
-                  </Text>
-                </View>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t('common.close')}
-                  onPress={() => setExpiryPickerVisible(false)}
-                  style={[styles.closeBtn, { borderColor: colors.border }]}
-                >
-                  <X size={20} color={colors.text} />
-                </Pressable>
+              <View style={[styles.expiryPresetRow, { marginBottom: 12, marginTop: 4 }]}>
+                {([
+                  ['form.expiryPreset1Month', 1, 'month'],
+                  ['form.expiryPreset1Year', 1, 'year'],
+                ] as const).map(([labelKey, amount, unit]) => {
+                  const presetDate = dayjs().add(amount, unit).format('YYYY-MM-DD');
+                  const selected = draftExpiryDate === presetDate;
+                  return (
+                    <Pressable
+                      key={labelKey}
+                      accessibilityRole="button"
+                      onPress={() => applyExpiryPreset(amount, unit)}
+                      style={({ pressed }) => [
+                        styles.expiryPresetButton,
+                        {
+                          borderColor: selected ? colors.primary : colors.border,
+                          backgroundColor: selected ? colors.primary : colors.backgroundElement
+                        },
+                        pressed && styles.pressedRow,
+                      ]}
+                    >
+                      <Text style={[
+                        styles.expiryPresetText,
+                        {
+                          color: selected ? (isDark ? '#101828' : '#ffffff') : colors.textSecondary,
+                          fontWeight: selected ? '600' : '500'
+                        }
+                      ]}>
+                        {t(labelKey as TranslationKey)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
 
               <View style={styles.datePickerMonthRow}>
@@ -1285,68 +1202,25 @@ export default function Dashboard() {
                 </View>
               )}
 
-              <View style={styles.datePickerActions}>
-                <ChalkButton
-                  title={t('common.clear')}
-                  onPress={() => setDraftExpiryDate('')}
-                  variant="outline"
-                />
-                <ChalkButton
-                  title={t('common.done')}
-                  onPress={confirmExpiryPicker}
-                  icon={Check}
-                  variant="primary"
-                />
-              </View>
-            </WobblyBox>
-          </View>
-        </Modal>
+        </ViewportModal>
 
-        <Modal
-          animationType="fade"
-          transparent={true}
+        <ViewportModal
           visible={bulkModalVisible}
-          onRequestClose={() => setBulkModalVisible(false)}
+          onClose={() => setBulkModalVisible(false)}
+          title={t('bulk.title')}
+          subtitle={plural('bulk.subtitle', selectedCount)}
+          maxWidth={520}
+          contentContainerStyle={styles.formContainer}
+          footer={(
+            <ChalkButton
+              onPress={handleBulkApply}
+              title={t('bulk.apply')}
+              icon={Check}
+              variant="primary"
+              style={styles.modalFooterButton}
+            />
+          )}
         >
-          <View style={styles.modalOverlay}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-              style={styles.modalKeyboardAvoiding}
-            >
-              <WobblyBox
-                backgroundColor={colors.backgroundElement}
-                borderColor={colors.border}
-                borderWidth={1}
-                shadowOffset={2}
-                style={styles.modalBox}
-                contentStyle={styles.modalContent}
-              >
-                <View style={styles.modalHandle} />
-                <View style={styles.modalHeader}>
-                  <View style={styles.modalTitleCopy}>
-                    <Text style={[styles.modalTitle, { color: colors.text }]}>
-                      {t('bulk.title')}
-                    </Text>
-                    <Text style={[styles.bulkHelpText, { color: colors.textSecondary }]}>
-                      {plural('bulk.subtitle', selectedCount)}
-                    </Text>
-                  </View>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={t('common.close')}
-                    onPress={() => setBulkModalVisible(false)}
-                    style={[styles.closeBtn, { borderColor: colors.border }]}
-                  >
-                    <X size={20} color={colors.text} />
-                  </Pressable>
-                </View>
-
-                <ScrollView
-                  style={styles.formScroll}
-                  contentContainerStyle={styles.formContainer}
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
-                >
                   <Text style={[styles.bulkHelpText, { color: colors.textSecondary }]}>
                     {t('bulk.help')}
                   </Text>
@@ -1402,151 +1276,91 @@ export default function Dashboard() {
                       );
                     })}
                   </View>
+        </ViewportModal>
 
-                  <View style={styles.formActions}>
-                    <ChalkButton
-                      onPress={handleBulkApply}
-                      title={t('bulk.apply')}
-                      icon={Check}
-                      variant="primary"
-                      style={styles.saveBtn}
-                    />
-                  </View>
-                </ScrollView>
-              </WobblyBox>
-            </KeyboardAvoidingView>
-          </View>
-        </Modal>
-
-        <Modal
-          animationType="fade"
-          transparent={true}
+        <ViewportModal
           visible={currencyModalVisible}
-          onRequestClose={() => setCurrencyModalVisible(false)}
+          onClose={() => setCurrencyModalVisible(false)}
+          title={t('form.currency')}
+          maxWidth={520}
+          contentContainerStyle={styles.sheetOptionList}
+          footer={(
+            <ChalkButton
+              title={t('common.cancel')}
+              onPress={() => setCurrencyModalVisible(false)}
+              variant="outline"
+              style={styles.modalFooterButton}
+            />
+          )}
         >
-          <View style={styles.sheetOverlay}>
-            <Pressable style={styles.sheetBackdrop} onPress={() => setCurrencyModalVisible(false)} />
-            <WobblyBox
-              backgroundColor={colors.backgroundElement}
-              borderColor={colors.border}
-              borderWidth={1}
-              shadowOffset={2}
-              style={styles.sheetBox}
-              contentStyle={styles.sheetContent}
-            >
-              <View style={styles.modalHandle} />
-              <View style={styles.modalHeader}>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>
-                  {t('form.currency')}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t('common.close')}
-                  onPress={() => setCurrencyModalVisible(false)}
-                  style={[styles.closeBtn, { borderColor: colors.border }]}
-                >
-                  <X size={20} color={colors.text} />
-                </Pressable>
-              </View>
-
-              <ScrollView
-                style={styles.sheetScroll}
-                contentContainerStyle={styles.sheetOptionList}
-                showsVerticalScrollIndicator={false}
+          {supportedCurrencies.map(option => {
+            const selected = currency === option;
+            return (
+              <Pressable
+                key={option}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                onPress={() => {
+                  setCurrency(option);
+                  setCurrencyModalVisible(false);
+                }}
+                style={[
+                  styles.sheetOption,
+                  {
+                    borderColor: selected ? colors.primary : colors.border,
+                    backgroundColor: selected ? colors.backgroundSelected : 'transparent',
+                  },
+                ]}
               >
-                {supportedCurrencies.map(option => {
-                  const selected = currency === option;
-                  return (
-                    <Pressable
-                      key={option}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      onPress={() => {
-                        setCurrency(option);
-                        setCurrencyModalVisible(false);
-                      }}
-                      style={[
-                        styles.sheetOption,
-                        {
-                          borderColor: selected ? colors.primary : colors.border,
-                          backgroundColor: selected ? colors.backgroundSelected : 'transparent',
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.sheetOptionText, { color: selected ? colors.primary : colors.text }]}>
-                        {option}
-                      </Text>
-                      {selected && <Check size={18} color={colors.primary} />}
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </WobblyBox>
-          </View>
-        </Modal>
+                <Text style={[styles.sheetOptionText, { color: selected ? colors.primary : colors.text }]}>{option}</Text>
+                {selected && <Check size={18} color={colors.primary} />}
+              </Pressable>
+            );
+          })}
+        </ViewportModal>
 
-        <Modal
-          animationType="fade"
-          transparent={true}
+        <ViewportModal
           visible={sortModalVisible}
-          onRequestClose={() => setSortModalVisible(false)}
+          onClose={() => setSortModalVisible(false)}
+          title={t('dashboard.sortBy')}
+          maxWidth={520}
+          contentContainerStyle={styles.sheetOptionList}
+          footer={(
+            <ChalkButton
+              title={t('common.cancel')}
+              onPress={() => setSortModalVisible(false)}
+              variant="outline"
+              style={styles.modalFooterButton}
+            />
+          )}
         >
-          <View style={styles.sheetOverlay}>
-            <Pressable style={styles.sheetBackdrop} onPress={() => setSortModalVisible(false)} />
-            <WobblyBox
-              backgroundColor={colors.backgroundElement}
-              borderColor={colors.border}
-              borderWidth={1}
-              shadowOffset={2}
-              style={styles.sheetBox}
-              contentStyle={styles.sheetContent}
-            >
-              <View style={styles.modalHandle} />
-              <View style={styles.modalHeader}>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>
-                  {t('dashboard.sortBy')}
+          {(['createdAt', 'expiresAt', 'price'] as const).map(option => {
+            const selected = sortKey === option;
+            return (
+              <Pressable
+                key={option}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                onPress={() => {
+                  setSortKey(option);
+                  setSortModalVisible(false);
+                }}
+                style={[
+                  styles.sheetOption,
+                  {
+                    borderColor: selected ? colors.primary : colors.border,
+                    backgroundColor: selected ? colors.backgroundSelected : 'transparent',
+                  },
+                ]}
+              >
+                <Text style={[styles.sheetOptionText, { color: selected ? colors.primary : colors.text }]}>
+                  {t(`dashboard.sort.${option}` as TranslationKey)}
                 </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t('common.close')}
-                  onPress={() => setSortModalVisible(false)}
-                  style={[styles.closeBtn, { borderColor: colors.border }]}
-                >
-                  <X size={20} color={colors.text} />
-                </Pressable>
-              </View>
-
-              <View style={styles.sheetOptionList}>
-                {(['createdAt', 'expiresAt', 'price'] as const).map(option => {
-                  const selected = sortKey === option;
-                  return (
-                    <Pressable
-                      key={option}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      onPress={() => {
-                        setSortKey(option);
-                        setSortModalVisible(false);
-                      }}
-                      style={[
-                        styles.sheetOption,
-                        {
-                          borderColor: selected ? colors.primary : colors.border,
-                          backgroundColor: selected ? colors.backgroundSelected : 'transparent',
-                        },
-                      ]}
-                    >
-                      <Text style={[styles.sheetOptionText, { color: selected ? colors.primary : colors.text }]}>
-                        {t(`dashboard.sort.${option}` as TranslationKey)}
-                      </Text>
-                      {selected && <Check size={18} color={colors.primary} />}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </WobblyBox>
-          </View>
-        </Modal>
+                {selected && <Check size={18} color={colors.primary} />}
+              </Pressable>
+            );
+          })}
+        </ViewportModal>
       </SafeAreaView>
     </PaperBackground>
   );
@@ -1706,9 +1520,6 @@ const styles = StyleSheet.create({
   searchModalContent: {
     padding: 18,
   },
-  searchModalOverlay: {
-    justifyContent: 'center',
-  },
   searchModalInput: {
     marginBottom: 14,
   },
@@ -1720,13 +1531,6 @@ const styles = StyleSheet.create({
   searchModalSortSelect: {
     flex: 1,
     width: 'auto',
-  },
-  searchModalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 16,
   },
   filterLabel: {
     fontFamily: Fonts.heading,
@@ -1861,72 +1665,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 24,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 24,
-    paddingBottom: Platform.OS === 'web' ? 16 : 0,
-  },
-  modalKeyboardAvoiding: {
-    width: '100%',
-    maxWidth: 520,
-    maxHeight: '92%',
-  },
-  modalBox: {
-    width: '100%',
-    borderRadius: 20,
-    maxHeight: '100%',
-  },
-  modalContent: {
-    padding: 18,
-    maxHeight: '100%',
-    flexShrink: 1,
-  },
-  modalHandle: {
-    width: 42,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: 'rgba(148, 163, 184, 0.55)',
-    alignSelf: 'center',
-    marginBottom: 14,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.three,
-    gap: 12,
-  },
-  modalTitleCopy: {
-    flex: 1,
-  },
-  modalTitle: {
-    fontFamily: Fonts.heading,
-    fontSize: 20,
-    fontWeight: '700',
-  },
   bulkHelpText: {
     fontFamily: Fonts.body,
     fontSize: 13,
     lineHeight: 18,
   },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    borderWidth: 1,
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   formContainer: {
     gap: 12,
     paddingBottom: 24,
-  },
-  formScroll: {
-    flexShrink: 1,
   },
   label: {
     fontFamily: Fonts.heading,
@@ -1992,20 +1738,37 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
+  cycleSwitchContainer: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 3,
+    height: 48,
+    marginVertical: 4,
+  },
+  cycleSwitchOption: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 9,
+  },
+  cycleSwitchOptionText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   priceInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   priceInput: {
-    flex: 1,
+    flex: 1.2,
     minWidth: 0,
     height: 48,
     marginVertical: 0,
   },
   currencySelectButton: {
-    width: 112,
-    flexShrink: 0,
+    flex: 1,
     height: 48,
     minHeight: 48,
     borderWidth: 1,
@@ -2014,7 +1777,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    gap: 8,
     marginBottom: 0,
   },
   currencySelectCopy: {
@@ -2032,46 +1795,34 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginRight: 4,
   },
-  formActions: {
-    marginTop: 18,
-    alignItems: 'stretch',
-  },
-  saveBtn: {
-    alignSelf: 'stretch',
-  },
   datePickerContent: {
-    padding: 18,
-  },
-  datePickerSelected: {
-    fontFamily: Fonts.body,
-    fontSize: 13,
-    marginTop: 3,
+    padding: 24,
   },
   datePickerMonthRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 16,
   },
   quickPickerGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 12,
   },
   quickPickerButton: {
-    minWidth: 72,
-    height: 40,
+    minWidth: 80,
+    height: 44,
     borderWidth: 1,
     borderRadius: 12,
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 6,
   },
   monthNavButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderWidth: 1,
     borderRadius: 12,
     alignItems: 'center',
@@ -2084,22 +1835,23 @@ const styles = StyleSheet.create({
   },
   dateWeekdayRow: {
     flexDirection: 'row',
-    marginBottom: 4,
+    marginBottom: 8,
   },
   dateWeekday: {
     width: '14.2857%',
     fontFamily: Fonts.body,
-    fontSize: 11,
+    fontSize: 12,
     textAlign: 'center',
   },
   dateGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 12,
+    marginBottom: 20,
+    rowGap: 6,
   },
   dateCell: {
     width: '14.2857%',
-    height: 40,
+    height: 44,
     borderWidth: 1,
     borderRadius: 10,
     alignItems: 'center',
@@ -2110,22 +1862,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
-  datePickerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
   quickOptionGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 8,
-    marginBottom: 12,
+    rowGap: 12,
+    marginBottom: 20,
   },
   quickOption: {
     width: '23%',
-    height: 40,
+    height: 48,
     borderWidth: 1,
     borderRadius: 10,
     alignItems: 'center',
@@ -2136,37 +1882,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  sheetOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.42)',
-    paddingHorizontal: 16,
-    paddingTop: 24,
-    paddingBottom: Platform.OS === 'web' ? 16 : 0,
-  },
-  sheetBackdrop: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-  },
-  sheetBox: {
-    width: '100%',
-    maxWidth: 520,
-    borderRadius: 8,
-  },
-  sheetContent: {
-    padding: 18,
-  },
   sheetOptionList: {
     gap: 8,
     paddingBottom: 6,
   },
-  sheetScroll: {
-    maxHeight: 420,
-  },
+  modalFooterButton: { flex: 1 },
   sheetOption: {
     minHeight: 48,
     borderWidth: 1,

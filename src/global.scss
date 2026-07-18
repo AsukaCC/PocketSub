@@ -36,12 +36,12 @@ html[data-theme='dark'] {
   }
 }
 
-[data-prism-stage='ready'] {
+[data-prism-face='ready'] {
   transition: transform $motion-standard;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-prism-stage='ready'] {
+  [data-prism-face='ready'] {
     transition-duration: 1ms;
   }
 }

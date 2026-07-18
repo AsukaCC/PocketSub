@@ -1,56 +1,41 @@
-# Welcome to your Expo app 👋
+# Pocket Ledger
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Pocket Ledger is a local-first personal accounting app built with Expo and React Native. It tracks everyday income and expenses, provides cash-flow insights, and keeps subscription management as a focused secondary feature.
 
-## Get started
+## Features
 
-1. Install dependencies
+- Unified manual and subscription records with shared amount, currency, category, and date fields
+- Monthly balance, filters, and six-month spending insights
+- Subscription tracking with renewal and expiry management
+- Device-local storage through AsyncStorage
+- Versioned JSON export and import, including legacy PocketSub backups
+- Responsive Web, Android, and iOS interfaces
 
-   ```bash
-   npm install
-   ```
+## Development
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Install dependencies and start Expo:
 
 ```bash
-npm run reset-project
+npm install
+npm start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Run the project checks:
 
-### Other setup steps
+```bash
+npx tsc --noEmit
+npm run lint
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+The app uses file-based routing under `src/app`. User data stays on the device unless the user explicitly exports a JSON backup.
 
-## Learn more
+## Manual GitHub Pages release
 
-To learn more about developing your project with Expo, look at the following resources:
+GitHub Pages releases are intentionally manual. No GitHub Actions workflow publishes this project.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```bash
+npm run build:pages
+npm run deploy:pages
+```
 
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+`build:pages` exports the static site to `dist` with the `/PocketSub` base path. `deploy:pages` rebuilds it and pushes the generated site to the `gh-pages` branch.

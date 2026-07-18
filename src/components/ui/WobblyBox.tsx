@@ -11,6 +11,7 @@ interface WobblyBoxProps {
   borderWidth?: number;
   shadowOffset?: number;
   shadowColor?: string;
+  testID?: string;
 }
 
 export function WobblyBox({
@@ -22,6 +23,7 @@ export function WobblyBox({
   borderWidth = 1,
   shadowOffset = 4,
   shadowColor,
+  testID,
 }: WobblyBoxProps) {
   const { colors, isDark } = useCustomTheme();
 
@@ -40,6 +42,7 @@ export function WobblyBox({
 
   return (
     <View
+      testID={testID}
       style={[
         styles.wrapper,
         {

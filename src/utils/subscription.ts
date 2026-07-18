@@ -9,7 +9,7 @@ export interface Subscription {
   currency: string;
   cycle: BillingCycle;
   category: string;
-  group?: string;
+  group: string;
   tags?: string[];
   startDate: string;
   expiresAt?: string;

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   Alert,
-  Modal,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -9,23 +8,24 @@ import {
   Switch,
   Text,
   Pressable,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { ChevronRight, CircleAlert, CircleCheck, Coins, Database, Download, Languages, Moon, Sun, Upload } from 'lucide-react-native';
 
 import { BottomTabInset, Fonts, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useSubscriptions } from '@/context/SubscriptionContext';
+import { useLedger } from '@/context/LedgerContext';
+import { useCategories } from '@/context/CategoryContext';
 import { useCustomTheme } from '@/context/ThemeContext';
 import { ChalkButton } from '@/components/ui/ChalkButton';
 import { PaperBackground } from '@/components/ui/PaperBackground';
 import { WobblyBox } from '@/components/ui/WobblyBox';
+import { ViewportModal } from '@/components/ui/ViewportModal';
 import {
   createBackupFilename,
   BackupError,
   getUtf8ByteLength,
   MAX_BACKUP_BYTES,
-  parseBackupJson,
+  parseAppBackupJson,
   serializeBackup,
 } from '@/utils/backup';
 import { pickJsonFile, saveJsonFile } from '@/utils/dataTransfer';
@@ -72,11 +72,19 @@ function confirmReplacement(
 }
 
 export default function SettingsScreen() {
-  const { subscriptions, replaceSubscriptions, isHydrated } = useSubscriptions();
+  const {
+    transactions,
+    replaceTransactions,
+    isHydrated,
+  } = useLedger();
+  const {
+    categories,
+    replaceCategories,
+    isHydrated: categoriesHydrated,
+  } = useCategories();
   const { colors, isDark, toggleTheme } = useCustomTheme();
   const { language, setLanguage, t, plural } = useI18n();
   const { displayCurrency, setDisplayCurrency, getCurrencyName, ratesDate } = useCurrency();
-  const { height } = useWindowDimensions();
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
@@ -87,13 +95,13 @@ export default function SettingsScreen() {
     setFeedback(null);
     try {
       await saveJsonFile(
-        serializeBackup(subscriptions),
+        serializeBackup(transactions, categories),
         createBackupFilename(),
         t('settings.exportData')
       );
       setFeedback({
         type: 'success',
-        message: t('settings.exportSuccess', { count: subscriptions.length }),
+        message: t('settings.exportSuccess', { count: transactions.length }),
       });
     } catch (error) {
       setFeedback({
@@ -118,13 +126,15 @@ export default function SettingsScreen() {
         throw new BackupError('tooLarge');
       }
 
-      const importedSubscriptions = parseBackupJson(selectedFile.contents);
-      const confirmed = subscriptions.length === 0
+      const importedData = parseAppBackupJson(selectedFile.contents);
+      const currentCount = transactions.length;
+      const nextCount = importedData.records.length;
+      const confirmed = currentCount === 0
         || await confirmReplacement(
           t('settings.replaceTitle'),
           t('settings.replaceMessage', {
-            current: subscriptions.length,
-            next: importedSubscriptions.length,
+            current: currentCount,
+            next: nextCount,
           }),
           t('common.cancel'),
           t('common.replace')
@@ -134,10 +144,11 @@ export default function SettingsScreen() {
         return;
       }
 
-      replaceSubscriptions(importedSubscriptions);
+      replaceTransactions(importedData.records);
+      replaceCategories(importedData.categories);
       setFeedback({
         type: 'success',
-        message: t('settings.importSuccess', { count: importedSubscriptions.length }),
+        message: t('settings.importSuccess', { count: nextCount }),
       });
     } catch (error) {
       setFeedback({
@@ -149,12 +160,11 @@ export default function SettingsScreen() {
     }
   };
 
-  const controlsDisabled = !isHydrated || busyAction !== null;
+  const controlsDisabled = !isHydrated || !categoriesHydrated || busyAction !== null;
   const feedbackColor = feedback?.type === 'success' ? colors.accentGreen : colors.danger;
   const feedbackBackground = feedback?.type === 'success'
     ? (isDark ? '#123127' : '#f0fdf4')
     : (isDark ? '#351b1b' : '#fff7f6');
-  const currencyListMaxHeight = Math.max(160, height - 190);
 
   const handleSelectLanguage = (nextLanguage: Language) => {
     setLanguage(nextLanguage);
@@ -274,7 +284,7 @@ export default function SettingsScreen() {
               <View style={styles.sectionHeadingCopy}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>{t('settings.dataBackup')}</Text>
                 <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-                  {plural('settings.stored', subscriptions.length)}
+                  {plural('settings.stored', transactions.length)}
                 </Text>
               </View>
             </View>
@@ -329,111 +339,87 @@ export default function SettingsScreen() {
           <View style={{ height: Platform.OS === 'web' ? BottomTabInset : Spacing.five }} />
         </ScrollView>
 
-        <Modal
-          animationType="fade"
-          transparent
+        <ViewportModal
           visible={languageModalVisible}
-          onRequestClose={() => setLanguageModalVisible(false)}
+          onClose={() => setLanguageModalVisible(false)}
+          title={t('settings.language')}
+          maxWidth={520}
+          contentContainerStyle={styles.selectOptionList}
+          footer={(
+            <ChalkButton
+              title={t('common.cancel')}
+              onPress={() => setLanguageModalVisible(false)}
+              variant="outline"
+              style={styles.modalFooterButton}
+            />
+          )}
         >
-          <View style={styles.modalOverlay}>
-            <WobblyBox
-              backgroundColor={colors.backgroundElement}
-              borderColor={colors.border}
-              borderWidth={1}
-              shadowOffset={2}
-              style={styles.selectSheet}
-              contentStyle={styles.selectSheetContent}
-            >
-              <Text style={[styles.selectTitle, { color: colors.text }]}>{t('settings.language')}</Text>
-              {supportedLanguages.map(option => {
-                const selected = language === option;
-                return (
-                  <Pressable
-                    key={option}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    onPress={() => handleSelectLanguage(option)}
-                    style={({ pressed }) => [
-                      styles.selectOption,
-                      {
-                        borderColor: selected ? colors.primary : colors.border,
-                        backgroundColor: selected ? colors.backgroundSelected : 'transparent',
-                      },
-                      pressed && styles.pressedRow,
-                    ]}
-                  >
-                    <Text style={[styles.selectOptionText, { color: selected ? colors.primary : colors.text }]}>
-                      {translations[option]['language.name']}
-                    </Text>
-                    {selected && <CircleCheck size={18} color={colors.primary} />}
-                  </Pressable>
-                );
-              })}
-              <ChalkButton
-                title={t('common.cancel')}
-                onPress={() => setLanguageModalVisible(false)}
-                variant="outline"
-                style={styles.selectCancel}
-              />
-            </WobblyBox>
-          </View>
-        </Modal>
-
-        <Modal
-          animationType="fade"
-          transparent
-          visible={currencyModalVisible}
-          onRequestClose={() => setCurrencyModalVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <WobblyBox
-              backgroundColor={colors.backgroundElement}
-              borderColor={colors.border}
-              borderWidth={1}
-              shadowOffset={2}
-              style={styles.selectSheet}
-              contentStyle={styles.selectSheetContent}
-            >
-              <Text style={[styles.selectTitle, { color: colors.text }]}>{t('settings.displayCurrency')}</Text>
-              <ScrollView
-                style={[styles.selectOptionScroll, { maxHeight: currencyListMaxHeight }]}
-                contentContainerStyle={styles.selectOptionList}
-                showsVerticalScrollIndicator={false}
+          {supportedLanguages.map(option => {
+            const selected = language === option;
+            return (
+              <Pressable
+                key={option}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                onPress={() => handleSelectLanguage(option)}
+                style={({ pressed }) => [
+                  styles.selectOption,
+                  {
+                    borderColor: selected ? colors.primary : colors.border,
+                    backgroundColor: selected ? colors.backgroundSelected : 'transparent',
+                  },
+                  pressed && styles.pressedRow,
+                ]}
               >
-                {supportedCurrencies.map(option => {
-                  const selected = displayCurrency === option;
-                  return (
-                    <Pressable
-                      key={option}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      onPress={() => handleSelectCurrency(option)}
-                      style={({ pressed }) => [
-                        styles.selectOption,
-                        {
-                          borderColor: selected ? colors.primary : colors.border,
-                          backgroundColor: selected ? colors.backgroundSelected : 'transparent',
-                        },
-                        pressed && styles.pressedRow,
-                      ]}
-                    >
-                      <Text style={[styles.selectOptionText, { color: selected ? colors.primary : colors.text }]}>
-                        {getCurrencyName(option)}
-                      </Text>
-                      {selected && <CircleCheck size={18} color={colors.primary} />}
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-              <ChalkButton
-                title={t('common.cancel')}
-                onPress={() => setCurrencyModalVisible(false)}
-                variant="outline"
-                style={styles.selectCancel}
-              />
-            </WobblyBox>
-          </View>
-        </Modal>
+                <Text style={[styles.selectOptionText, { color: selected ? colors.primary : colors.text }]}>
+                  {translations[option]['language.name']}
+                </Text>
+                {selected && <CircleCheck size={18} color={colors.primary} />}
+              </Pressable>
+            );
+          })}
+        </ViewportModal>
+
+        <ViewportModal
+          visible={currencyModalVisible}
+          onClose={() => setCurrencyModalVisible(false)}
+          title={t('settings.displayCurrency')}
+          maxWidth={520}
+          contentContainerStyle={styles.selectOptionList}
+          footer={(
+            <ChalkButton
+              title={t('common.cancel')}
+              onPress={() => setCurrencyModalVisible(false)}
+              variant="outline"
+              style={styles.modalFooterButton}
+            />
+          )}
+        >
+          {supportedCurrencies.map(option => {
+            const selected = displayCurrency === option;
+            return (
+              <Pressable
+                key={option}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                onPress={() => handleSelectCurrency(option)}
+                style={({ pressed }) => [
+                  styles.selectOption,
+                  {
+                    borderColor: selected ? colors.primary : colors.border,
+                    backgroundColor: selected ? colors.backgroundSelected : 'transparent',
+                  },
+                  pressed && styles.pressedRow,
+                ]}
+              >
+                <Text style={[styles.selectOptionText, { color: selected ? colors.primary : colors.text }]}>
+                  {getCurrencyName(option)}
+                </Text>
+                {selected && <CircleCheck size={18} color={colors.primary} />}
+              </Pressable>
+            );
+          })}
+        </ViewportModal>
       </SafeAreaView>
     </PaperBackground>
   );
@@ -572,29 +558,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-    padding: 16,
-  },
-  selectSheet: {
-    width: '100%',
-    maxWidth: 520,
-    alignSelf: 'center',
-    marginBottom: Platform.OS === 'web' ? 24 : 0,
-  },
-  selectSheetContent: {
-    padding: 16,
-    gap: 8,
-    flexShrink: 1,
-  },
-  selectTitle: {
-    fontFamily: Fonts.heading,
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
   selectOption: {
     minHeight: 46,
     borderWidth: 1,
@@ -605,11 +568,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
-  selectOptionScroll: {
-    alignSelf: 'stretch',
-    flexGrow: 0,
-    flexShrink: 1,
-  },
   selectOptionList: {
     gap: 8,
     paddingBottom: 2,
@@ -619,8 +577,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  selectCancel: {
-    marginTop: 6,
-    alignSelf: 'stretch',
-  },
+  modalFooterButton: { flex: 1 },
 });

@@ -28,6 +28,14 @@ export default function AppTabs() {
         />
       </NativeTabs.Trigger>
 
+      <NativeTabs.Trigger name="subscriptions">
+        <NativeTabs.Trigger.Label>{t('nav.subscriptions')}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          sf={{ default: 'creditcard', selected: 'creditcard.fill' }}
+          md={{ default: 'subscriptions', selected: 'subscriptions' }}
+        />
+      </NativeTabs.Trigger>
+
       <NativeTabs.Trigger name="explore">
         <NativeTabs.Trigger.Label>{t('nav.analytics')}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
